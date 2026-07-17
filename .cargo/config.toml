@@ -1,0 +1,2 @@
+[alias]
+visualize = "run --example visualization --features=interval-tree,serde"

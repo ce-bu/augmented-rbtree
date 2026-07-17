@@ -1,0 +1,57 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nightly Rust Toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo builds
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "coverage"
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate Coverage Report
+        run: |
+          cargo llvm-cov \
+            --lcov \
+            --features alloc,serde,interval-tree \
+            --output-path lcov.info \
+            --lib \
+            --test allocator_api_tests \
+            --test allocator_tests \
+            --test augmentations_tests \
+            --test basic_tests \
+            --test drop_tests \
+            --test entry_tests \
+            --test interval_tree_tests \
+            --test iterators_tests \
+            --test rbtree_tests \
+            --test serde_tests \
+            --test topology_tests
+
+      - name: Upload to Coveralls
+        uses: coverallsapp/github-action@v2
+        continue-on-error: true 
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file-path-to-lcov: lcov.info
+          format: lcov
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}

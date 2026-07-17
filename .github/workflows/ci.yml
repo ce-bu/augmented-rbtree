@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================================
+  # Test matrix: stable, beta, nightly × Linux, macOS, Windows
+  # ============================================================================
+  test:
+    name: Test (${{ matrix.rust }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, beta, nightly]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-
+
+      - name: Run Stable & Beta Test Matrix
+        if: matrix.rust != 'nightly'
+        run: |
+          cargo test --no-default-features --features "alloc,interval-tree,serde" --release --tests
+          cargo test --no-default-features --features "allocator-api,interval-tree,serde" --release --tests
+          cargo test --no-default-features --release --tests
+          cargo test  --features "interval-tree,serde" --lib
+
+
+      - name: Run Nightly Test Matrix
+        if: matrix.rust == 'nightly'
+        run: |
+          cargo test --no-default-features --features "nightly,interval-tree,serde" --release --tests
+          cargo test --no-default-features --features "alloc,nightly,interval-tree,serde" --release --tests
+          cargo test --no-default-features --release --tests
+          cargo test  --features "interval-tree,serde" --lib
+
+
+  # ============================================================================
+  # Bare-Metal Cross Compilation (Enforces strict no_std safety on cloud checks)
+  # ============================================================================
+  embedded_check:
+    name: Embedded Check (no_std)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Stable with Cortex-M Target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7m-none-eabi
+
+      - name: Build bare-metal with Allocator Support
+        run: cargo build --target thumbv7m-none-eabi --no-default-features --features allocator-api,interval-tree
+
+      - name: Build bare-metal Pure Stack (Zero-Alloc Profile)
+        run: cargo build --target thumbv7m-none-eabi --no-default-features
+
+  # ============================================================================
+  # Linting and formatting
+  # ============================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable with clippy and rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (Standard Alloc Pipeline)
+        run: cargo clippy --no-default-features --features "alloc,interval-tree,serde" -- -D warnings
+
+      - name: Clippy (no-std Profile)
+        run: cargo clippy --no-default-features --features allocator-api,interval-tree,serde -- -D warnings
+
+  # ============================================================================
+  # Documentation (Ensures doc badge nightly formatting checks pass)
+  # ============================================================================
+  docs:
+    name: Docs Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@master  # <-- FIXED: Point safely to master branch
+        with:
+          toolchain: nightly                 # <-- FIXED: Tell the action to pull nightly
+
+      - name: Build docs with safe features
+        # Updated "alloc" to "nightly" to perfectly replicate docs.rs settings
+        run: cargo doc --no-default-features --features "nightly,interval-tree,serde" --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+          
+  # ============================================================================
+  # Security audit
+  # ============================================================================
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # Minimum Supported Rust Version (MSRV)
+  # ============================================================================
+  msrv:
+    name: MSRV (1.87)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.87"
+
+      - name: Test on MSRV with features active
+        run: cargo test --no-default-features --features "alloc,interval-tree,serde" --release
+
+  # ============================================================================
+  # Miri Memory Sanitizer
+  # ============================================================================
+  miri:
+    name: Miri Sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Nightly with Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Run Miri Test Suite
+        run: cargo miri test --no-default-features --features "alloc,interval-tree,serde" --release
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"

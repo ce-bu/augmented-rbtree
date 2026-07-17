@@ -1,0 +1,68 @@
+[package]
+name = "augmented-rbtree"
+version = "0.1.0"
+authors = ["Cezar Bulinaru <cbulinaru@gmail.com>"]
+edition = "2024"
+description = "An augmented red-black tree with generic, user-defined per-node statistics — enables interval trees, order-statistics trees, range-sum trees, and more."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ce-bu/augmented-rbtree"
+homepage = "https://github.com/ce-bu/augmented-rbtree"
+documentation = "https://docs.rs/augmented-rbtree"
+keywords = ["tree", "augmented", "interval-tree", "balanced", "data-structure"]
+categories = ["data-structures", "algorithms", "no-std"]
+readme = "README.md"
+rust-version = "1.87"
+exclude = [
+    "/.vscode/",
+    "/.rust-analyzer-vscode/",
+    "/target/",
+    "default.code-workspace",
+    "run_tests.sh",
+]
+
+[package.metadata.docs.rs]
+all-features = false
+# Document using nightly allocation + your core data features
+features = ["nightly", "interval-tree", "serde"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(coverage_nightly)',
+    'cfg(under_rust_analyzer)',
+] }
+
+[features]
+default = ["alloc"]
+debug = []
+interval-tree = ["alloc"]
+alloc = []
+allocator-api = ["dep:allocator-api2", "allocator-api2/alloc"]
+nightly = []
+serde = ["dep:serde", "serde/derive"]
+
+[dependencies]
+allocator-api2 = { version = "0.4", default-features = false, optional = true }
+serde = { version = "1", default-features = false, features = [
+    "derive",
+], optional = true }
+
+
+[dev-dependencies]
+rand = { version = "0.10", default-features = false, features = ["alloc"] }
+static_assertions = "1.1"
+proptest = "1"
+criterion = { version = "0.8", features = ["html_reports"] }
+serde_json = "1"
+env_logger = "0.11"
+graphviz-rust = "0.9.8"
+itertools = "0.15.0"
+serde = { version = "1", features = ["derive"] }
+
+[[bench]]
+name = "tree_bench"
+harness = false
+
+[[example]]
+name = "visualization"
+required-features = ["interval-tree"]

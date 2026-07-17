@@ -1,0 +1,36 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "editor.formatOnSave": true,
+        "evenBetterToml.schema.enabled": false,
+        "rust-analyzer.cargo.targetDir": ".rust-analyzer-vscode",
+        "rust-analyzer.cargo.features": [
+            "alloc",
+            "interval-tree",
+            "serde"
+        ],
+        "rust-analyzer.cargo.cfgs": [
+            "under_rust_analyzer"
+        ],
+        "rust-analyzer.cargo.noDefaultFeatures": true,
+        "rust-analyzer.check.allTargets": true,
+        "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.check.extraArgs": [
+            "--",
+            "-W",
+            "clippy::pedantic"
+        ],
+        "rust-analyzer.procMacro.enable": true,
+        "rust-analyzer.lens.enable": true
+    },
+    "extensions": {
+        "recommendations": [
+            "rust-lang.rust-analyzer",
+            "tamasfe.even-better-toml"
+        ]
+    }
+}
