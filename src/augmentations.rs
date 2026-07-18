@@ -38,8 +38,6 @@ impl<K, V> Augment<K, V> for Unit {
         _right: Option<(&K, &V, &Self::Stats)>,
     ) -> Self::Stats {
     }
-
-    fn identity() -> Self::Stats {}
 }
 
 // ============================================================================
@@ -72,11 +70,6 @@ where
     S: Add<Output = S> + From<usize> + Copy,
 {
     type Stats = S;
-
-    #[inline]
-    fn identity() -> S {
-        S::from(0usize)
-    }
 
     fn compute(_key: &K, _value: &V, left: Option<(&K, &V, &S)>, right: Option<(&K, &V, &S)>) -> S {
         S::from(1usize)
@@ -120,11 +113,6 @@ where
 {
     type Stats = V;
 
-    #[inline]
-    fn identity() -> V {
-        V::default()
-    }
-
     fn compute(_key: &K, value: &V, left: Option<(&K, &V, &V)>, right: Option<(&K, &V, &V)>) -> V {
         let left_sum = left.map(|(_, _, &s)| s).unwrap_or_default();
         let right_sum = right.map(|(_, _, &s)| s).unwrap_or_default();
@@ -160,11 +148,6 @@ where
     V: Ord + Copy,
 {
     type Stats = Option<V>;
-
-    #[inline]
-    fn identity() -> Option<V> {
-        None
-    }
 
     fn compute(
         _key: &K,
@@ -213,11 +196,6 @@ where
     V: Ord + Copy,
 {
     type Stats = Option<V>;
-
-    #[inline]
-    fn identity() -> Option<V> {
-        None
-    }
 
     fn compute(
         _key: &K,
@@ -272,11 +250,6 @@ where
 {
     type Stats = Option<K>;
 
-    #[inline]
-    fn identity() -> Option<K> {
-        None
-    }
-
     fn compute(
         _key: &K,
         value: &K,
@@ -317,11 +290,6 @@ macro_rules! constant_augment {
 
         impl $crate::Augment<$type, $type> for $name {
             type Stats = $type;
-
-            #[inline]
-            fn identity() -> Self::Stats {
-                $val
-            }
 
             #[inline]
             fn compute(

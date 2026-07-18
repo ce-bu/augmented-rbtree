@@ -43,8 +43,6 @@
 //! impl<K, V> Augment<K, V> for SubtreeCount {
 //!     type Stats = usize;
 //!
-//!     fn identity() -> usize { 0 }
-//!
 //!     fn compute(_k: &K, _v: &V,
 //!                left:  Option<(&K, &V, &usize)>,
 //!                right: Option<(&K, &V, &usize)>) -> usize {
@@ -141,7 +139,8 @@ pub use alloc_proxy::proxy::{AllocError, Allocator, Global, Layout};
 pub use augment::Augment;
 pub use augmentations::{IntervalMaxEnd, MinAugmentation, SubtreeSize, Unit};
 pub use augmented_rbtree::{
-    AugmentedRBTree, AugmentedRBTreeFactory, RBTree, internal_details::AugmentedRBTreeInt,
+    AugmentedRBTree, AugmentedRBTreeFactory, OutOfMemoryError, RBTree,
+    internal_details::AugmentedRBTreeInt,
 };
 pub use entry::{Entry, OccupiedEntry, VacantEntry};
 pub use iterators::{Iter, Keys, Range, RangeMut, ValMut, Values, ValuesMut};

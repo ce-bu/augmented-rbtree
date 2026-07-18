@@ -8,6 +8,7 @@ use crate::{
 };
 use core::fmt::Debug;
 
+/// An error type representing an out-of-memory condition when a tree tries to allocate a node.
 pub struct OutOfMemoryError {
     pub(crate) error: AllocError,
     pub(crate) size: usize,
@@ -27,6 +28,18 @@ impl OutOfMemoryError {
         Self { error, size }
     }
 }
+
+impl core::fmt::Display for OutOfMemoryError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Out of memory when trying to allocate {} bytes: {:?}",
+            self.size, self.error
+        )
+    }
+}
+
+impl core::error::Error for OutOfMemoryError {}
 
 /// A Red-Black Tree that supports augmentation through the `Augment` trait.
 /// This is the main type that users will interact with.
@@ -482,7 +495,7 @@ pub mod internal_details {
         /// # struct Sum;
         /// # impl Augment<i32, i32> for Sum {
         /// #     type Stats = i32;
-        /// #     fn identity() -> i32 { 0 }
+        /// #     
         /// #     fn compute(k: &i32, v: &i32, l: Option<(&i32, &i32, &i32)>, r: Option<(&i32, &i32, &i32)>) -> i32 {
         /// #         v + l.map(|x| *x.2).unwrap_or(0) + r.map(|x| *x.2).unwrap_or(0)
         /// #     }
@@ -1102,7 +1115,7 @@ pub mod internal_details {
                     let new_node = match self.layout.node_allocator.alloc_node(
                         key.clone(),
                         value.clone(),
-                        P::identity(),
+                        P::compute(&key, &value, None, None),
                     ) {
                         Ok(node) => node,
                         Err(err) => {

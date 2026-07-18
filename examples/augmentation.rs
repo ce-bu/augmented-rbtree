@@ -7,10 +7,6 @@ struct Counter;
 impl Augment<i32, &'static str> for Counter {
     type Stats = usize;
 
-    fn identity() -> Self::Stats {
-        0
-    }
-
     fn compute(
         _key: &i32,
         _value: &&'static str,

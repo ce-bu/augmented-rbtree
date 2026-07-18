@@ -5,8 +5,6 @@ use augmented_rbtree::{
 
 #[test]
 fn test_subtree_size_augmentation() {
-    assert_eq!(<SubtreeSize as Augment<i32, &str>>::identity(), 0);
-
     // Leaf node case (both children are None)
     let leaf_size = <SubtreeSize as Augment<i32, &str>>::compute(&10, &"val", None, None);
     assert_eq!(leaf_size, 1);
@@ -27,9 +25,6 @@ fn test_subtree_size_augmentation() {
 
 #[test]
 fn test_sum_augmentation() {
-    // Fix: Qualify types for SumAugmentation
-    assert_eq!(<SumAugmentation as Augment<&str, i64>>::identity(), 0i64);
-
     // Leaf node case
     let leaf_sum = <SumAugmentation as Augment<&str, i64>>::compute(&"key", &15i64, None, None);
     assert_eq!(leaf_sum, 15);
@@ -50,9 +45,6 @@ fn test_sum_augmentation() {
 
 #[test]
 fn test_max_augmentation() {
-    // Fix: Qualify types for MaxAugmentation
-    assert_eq!(<MaxAugmentation as Augment<i32, i32>>::identity(), None);
-
     // Leaf node case
     let leaf_max = <MaxAugmentation as Augment<i32, i32>>::compute(&10, &42, None, None);
     assert_eq!(leaf_max, Some(42));
@@ -73,9 +65,6 @@ fn test_max_augmentation() {
 
 #[test]
 fn test_min_augmentation() {
-    // Fix: Qualify types for MinAugmentation
-    assert_eq!(<MinAugmentation as Augment<i32, i32>>::identity(), None);
-
     // Leaf node case
     let leaf_min = <MinAugmentation as Augment<i32, i32>>::compute(&10, &7, None, None);
     assert_eq!(leaf_min, Some(7));
@@ -96,9 +85,6 @@ fn test_min_augmentation() {
 
 #[test]
 fn test_interval_max_end_augmentation() {
-    // Fix: Qualify types for IntervalMaxEnd
-    assert_eq!(<IntervalMaxEnd as Augment<i32, i32>>::identity(), None);
-
     // Leaf node case
     let leaf_max_end = <IntervalMaxEnd as Augment<i32, i32>>::compute(&5, &12, None, None);
     assert_eq!(leaf_max_end, Some(12));

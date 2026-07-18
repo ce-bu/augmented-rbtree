@@ -1,5 +1,7 @@
 #![cfg(feature = "interval-tree")]
+#![cfg_attr(feature = "nightly", feature(allocator_api))]
 
+use augmented_rbtree::Global;
 use augmented_rbtree::interval_tree::{Interval, IntervalTree};
 
 #[test]
@@ -77,11 +79,11 @@ fn interval_query_point_correct() {
 
     let at_15: Vec<_> = tree.query_point(&15).collect();
     assert_eq!(at_15.len(), 0);
-    assert!(!tree.any_contains_point(&15));
+    assert!(!tree.any_contains_point(15));
 
     let at_5_interior: Vec<_> = tree.query_point(&5).collect();
     assert_eq!(at_5_interior.len(), 1);
-    assert!(tree.any_contains_point(&5));
+    assert!(tree.any_contains_point(5));
 }
 
 #[test]
@@ -250,4 +252,19 @@ fn check_any_overlaps_with_exact_interval() {
     assert!(tree.any_overlaps(&1, &5));
     assert!(tree.any_overlaps(&6, &7));
     assert!(!tree.any_overlaps(&100, &120));
+}
+
+#[test]
+fn test_create_interval_tree_with_global_allocator() {
+    let mut tree = IntervalTree::<i32, i32>::new_in(Global);
+    tree.insert(Interval::new(1, 5), 10);
+    tree.insert(Interval::new(3, 8), 20);
+    tree.insert(Interval::new(10, 15), 30);
+
+    assert_eq!(tree.len(), 3);
+    assert_eq!(tree.get(&Interval::new(1, 5)), Some(&10));
+    assert_eq!(tree.get(&Interval::new(3, 8)), Some(&20));
+    assert_eq!(tree.get(&Interval::new(10, 15)), Some(&30));
+
+    assert_eq!(tree.inner_tree().len(), 3);
 }

@@ -1,6 +1,6 @@
 [package]
 name = "augmented-rbtree"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Cezar Bulinaru <cbulinaru@gmail.com>"]
 edition = "2024"
 description = "An augmented red-black tree with generic, user-defined per-node statistics — enables interval trees, order-statistics trees, range-sum trees, and more."

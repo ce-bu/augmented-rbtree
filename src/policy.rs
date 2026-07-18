@@ -27,9 +27,6 @@ pub mod internal_details {
             right: Option<(&Self::K, &Self::V, &Self::S)>,
         ) -> Self::S;
 
-        /// Returns the identity element for the augmented statistics.
-        fn identity() -> Self::S;
-
         /// Updates the augmented statistics for a node based on its key, value, and the stats of its children.
         fn augment(node: NodeRef<Self::K, Self::V, Self::S>);
 
@@ -72,10 +69,6 @@ pub mod internal_details {
             right: Option<(&Self::K, &Self::V, &Self::S)>,
         ) -> Self::S {
             G::compute(key, value, left, right)
-        }
-
-        fn identity() -> Self::S {
-            G::identity()
         }
 
         fn augment(node: NodeRef<Self::K, Self::V, Self::S>) {
@@ -129,8 +122,6 @@ pub mod internal_details {
             _right: Option<(&Self::K, &Self::V, &Self::S)>,
         ) -> Self::S {
         }
-
-        fn identity() -> Self::S {}
 
         fn augment(_node: NodeRef<Self::K, Self::V, Self::S>) {}
 

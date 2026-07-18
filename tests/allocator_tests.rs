@@ -4,7 +4,7 @@
 mod helpers;
 
 use crate::helpers::limited_allocator::LimitedAllocator;
-use augmented_rbtree::{AugmentedRBTree, Unit};
+use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, Unit};
 
 #[test]
 fn test_limited_allocator() {
@@ -76,4 +76,16 @@ fn check_that_clone_fails_with_insufficient_memory() {
 
     let tree2 = tree1.try_clone();
     assert!(tree2.is_err()); // This should fail due to limited allocator
+}
+
+#[test]
+fn check_tree_factory_with_custom_allocator() {
+    let allocator = LimitedAllocator::new(5, 1024);
+    let mut tree = AugmentedRBTreeFactory::<Unit>::new_tree_in(allocator.clone());
+    tree.insert(1, 10);
+    tree.insert(2, 20);
+    tree.insert(3, 30);
+    assert_eq!(tree.get(&1), Some(&10));
+    assert_eq!(tree.get(&2), Some(&20));
+    assert_eq!(tree.get(&3), Some(&30));
 }

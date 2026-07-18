@@ -14,7 +14,7 @@ where
 {
     pub(crate) root: Option<NodeRef<K, V, S>>,
     pub(crate) node_allocator: NodeAllocator<A>,
-    pub(crate) _marker: PhantomData<fn() -> (P, A)>,
+    pub(crate) _marker: PhantomData<fn() -> P>,
 }
 
 unsafe impl<K, V, S, A, P> Send for AugmentedRBTreeLayout<K, V, S, A, P>
@@ -57,9 +57,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         K: Ord,
     {
         let Some(mut current) = self.root else {
-            let new_node = self.node_allocator.alloc_node(key, value, P::identity())?;
+            let stats = P::compute(&key, &value, None, None);
+            let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
-            P::augment(new_node);
             self.root = Some(new_node);
             return Ok(None);
         };
@@ -91,7 +91,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             }
         };
 
-        let new_node = self.node_allocator.alloc_node(key, value, P::identity())?;
+        let stats = P::compute(&key, &value, None, None);
+        let new_node = self.node_allocator.alloc_node(key, value, stats)?;
         new_node.set_parent(Some(parent));
 
         if insert_left {
@@ -100,7 +101,6 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             parent.set_right(Some(new_node));
         }
 
-        P::augment(new_node);
         P::augment(parent);
         P::augment_upstream(parent);
         self.insert_fixup(new_node);
@@ -119,9 +119,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         K: Ord,
     {
         let Some(mut current) = self.root else {
-            let new_node = self.node_allocator.alloc_node(key, value, P::identity())?;
+            let stats = P::compute(&key, &value, None, None);
+            let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
-            P::augment(new_node);
             self.root = Some(new_node);
             return Ok(new_node);
         };
@@ -152,14 +152,14 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             }
         };
 
-        let new_node = self.node_allocator.alloc_node(key, value, P::identity())?;
+        let stats = P::compute(&key, &value, None, None);
+        let new_node = self.node_allocator.alloc_node(key, value, stats)?;
         new_node.set_parent(Some(parent));
         if insert_left {
             parent.set_left(Some(new_node));
         } else {
             parent.set_right(Some(new_node));
         }
-        P::augment(new_node);
         P::augment(parent);
         P::augment_upstream(parent);
         self.insert_fixup(new_node);

@@ -3,7 +3,9 @@
 
 mod helpers;
 use crate::helpers::common::test_rng;
-use augmented_rbtree::{AugmentedRBTree, SubtreeSize, Unit, constant_augment};
+use augmented_rbtree::{
+    AugmentedRBTree, AugmentedRBTreeFactory, MinAugmentation, SubtreeSize, Unit, constant_augment,
+};
 use itertools::Itertools;
 use rand::RngExt;
 use std::iter::repeat_with;
@@ -425,4 +427,50 @@ fn test_values_mut() {
 
     assert!(tree.verify_augmentation());
     assert!(tree.verify_properties());
+}
+
+#[test]
+fn check_number_of_root_nodes() {
+    let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
+    let mut rng = test_rng();
+    let keys: Vec<i32> = repeat_with(|| rng.random_range(1..1000))
+        .unique()
+        .take(200)
+        .collect();
+
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+
+    assert_eq!(tree.root_stats(), Some(&200));
+}
+
+#[test]
+fn check_minimum_augmentation() {
+    let mut tree = AugmentedRBTree::<i32, i32, MinAugmentation>::new();
+    let mut rng = test_rng();
+    let keys: Vec<i32> = repeat_with(|| rng.random_range(1..1000))
+        .unique()
+        .take(200)
+        .collect();
+
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+
+    tree.insert(1, 1);
+
+    let root_stats = tree.root_stats();
+    assert_eq!(root_stats, Some(&Some(1)));
+}
+
+#[test]
+fn test_create_tree_with_factory() {
+    let mut tree = AugmentedRBTreeFactory::<Unit>::new_tree();
+    tree.insert(1, 10);
+    tree.insert(2, 20);
+    tree.insert(3, 30);
+    assert_eq!(tree.get(&1), Some(&10));
+    assert_eq!(tree.get(&2), Some(&20));
+    assert_eq!(tree.get(&3), Some(&30));
 }

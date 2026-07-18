@@ -134,10 +134,6 @@ impl<T: Ord + Clone + Default, V> Augment<Interval<T>, V> for MaxHi<T> {
     /// Maximum `hi` value in this subtree. `None` only for the transient uninitialized state.
     type Stats = T;
 
-    fn identity() -> T {
-        T::default()
-    }
-
     fn compute(
         key: &Interval<T>,
         _value: &V,

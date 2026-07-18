@@ -48,10 +48,6 @@ struct SubtreeCount;
 impl<K, V> Augment<K, V> for SubtreeCount {
     type Stats = usize;
 
-    fn identity() -> usize {
-        0
-    }
-
     fn compute(
         _k: &K,
         _v: &V,

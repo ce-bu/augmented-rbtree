@@ -175,3 +175,46 @@ fn test_vacant_entry_graceful_oom() {
         panic!("Expected entry to be Vacant");
     }
 }
+
+#[test]
+fn check_remove_entry_decrements_len() {
+    let mut tree = setup_empty_tree();
+    tree.insert("key1".to_string(), 1);
+    tree.insert("key2".to_string(), 2);
+    assert_eq!(tree.len(), 2);
+
+    // Remove an entry and check that len decrements
+    let removed_value = tree.remove_entry(&"key1".to_string());
+    assert_eq!(removed_value, Some(("key1".to_string(), 1)));
+    assert_eq!(tree.len(), 1);
+
+    // Remove the second entry and check that len decrements to zero
+    let removed_value = tree.remove_entry(&"key2".to_string());
+    assert_eq!(removed_value, Some(("key2".to_string(), 2)));
+    assert_eq!(tree.len(), 0);
+}
+
+#[test]
+fn entry_api_coverage() {
+    let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
+    let keys = [
+        10, 34, 148, 74, 175, 53, 102, 131, 50, 10, 27, 80, 1, 97, 20, 159, 156, 31, 197, 175, 31,
+        84, 186, 138, 68, 148, 96, 11, 195, 24, 102, 64, 172, 79, 140, 52, 61, 73, 194, 150, 131,
+        149, 125, 43, 81, 74, 194, 70, 145, 63, 33, 98, 149, 98, 47, 28, 81, 188, 137, 164, 123,
+        26, 128, 135, 24, 153, 93, 108, 168, 118, 72, 190, 6, 81, 174, 194, 164, 154, 197, 191, 3,
+        16, 128, 143, 62, 91, 107, 92, 95, 158, 8, 108, 185, 190, 151, 63, 53, 199, 76, 16,
+    ];
+
+    for &key in &keys {
+        tree.entry(key).or_insert(key);
+    }
+
+    for key in &keys {
+        tree.remove_entry(key);
+    }
+
+    assert!(tree.is_empty());
+    for &key in &keys {
+        assert_eq!(tree.get(&key), None);
+    }
+}

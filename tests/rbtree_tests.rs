@@ -24,3 +24,35 @@ fn test_simple_rbtree() {
         assert!(tree.contains_key(&key));
     }
 }
+
+#[test]
+fn create_rbtree_ergonomic() {
+    let mut tree = RBTree::new();
+    let mut rng = test_rng();
+    let keys: Vec<i32> = repeat_with(|| rng.random_range(1..1000))
+        .unique()
+        .take(500)
+        .collect();
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+    for &key in &keys {
+        assert!(tree.contains_key(&key));
+    }
+}
+
+#[test]
+fn create_rbtree_using_allocator() {
+    let mut tree = RBTree::new_in(augmented_rbtree::Global);
+    let mut rng = test_rng();
+    let keys: Vec<i32> = repeat_with(|| rng.random_range(1..1000))
+        .unique()
+        .take(500)
+        .collect();
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+    for &key in &keys {
+        assert!(tree.contains_key(&key));
+    }
+}

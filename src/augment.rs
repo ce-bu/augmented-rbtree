@@ -10,7 +10,4 @@ pub trait Augment<K, V>: Sized {
         left: Option<(&K, &V, &Self::Stats)>,
         right: Option<(&K, &V, &Self::Stats)>,
     ) -> Self::Stats;
-
-    /// Returns the identity element for the augmented data.
-    fn identity() -> Self::Stats;
 }

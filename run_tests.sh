@@ -25,7 +25,8 @@ Commands:
   miri       Run core tests using Miri isolation testing
   cov        Run branch coverage via cargo-llvm-cov
   cov2       Run branch coverage via grcov profiling
-
+  doctest    Run core tests with the doctest feature
+  opendoc    Open the generated documentation in a browser
 Options:
   -n, --nightly  Force the use of the +nightly toolchain for standard tasks
   -h, --help     Display this help documentation
@@ -186,6 +187,11 @@ run_doctest()
     cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde"
 }
 
+run_opendoc()
+{
+     RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --no-default-features --features "nightly,interval-tree,serde" --open
+}
+
 command_target=""
 
 if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
@@ -228,6 +234,7 @@ case "$command_target" in
     cov2) run_cov2 ;;
     ci) run_ci ;;
     doctest) run_doctest ;;
+    opendoc) run_opendoc ;;
     *)
         log_error "Invalid task command name: '$command_target'"
         print_usage

@@ -105,11 +105,5 @@ pub(crate) mod custom_augment_a {
                 data: result.finish().to_string(),
             }
         }
-
-        fn identity() -> Self::Stats {
-            CustomStats {
-                data: String::new(),
-            }
-        }
     }
 }
