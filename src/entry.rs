@@ -249,7 +249,6 @@ where
     {
         // We own the key — insert it, then retrieve a pointer to the newly inserted node.
         let node = self.tree.layout.try_insert_node_get_ref(self.key, value)?;
-        self.tree.len += 1;
         Ok(unsafe { &mut (*node.ptr.as_ptr()).value })
     }
 

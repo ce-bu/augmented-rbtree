@@ -124,6 +124,8 @@ pub mod internal_details {
         node_allocator::NodeAllocator,
         policy::internal_details::TreePolicy,
     };
+    #[cfg(feature = "cursor")]
+    use core::ops::Bound;
     use core::{
         borrow::Borrow,
         fmt::{self},
@@ -133,6 +135,12 @@ pub mod internal_details {
         ptr,
     };
 
+    #[cfg(feature = "cursor")]
+    use crate::cursor::{NavCursor, NavCursorMut};
+
+    #[cfg(feature = "cursor")]
+    use crate::iterators::RangeBoundsLimits;
+
     /// A Red-Black Tree that supports augmentation through the `Augment` trait.
     pub struct AugmentedRBTreeInt<K, V, S, A, P>
     where
@@ -140,7 +148,6 @@ pub mod internal_details {
         A: Allocator,
     {
         pub(crate) layout: AugmentedRBTreeLayout<K, V, S, A, P>,
-        pub(crate) len: usize,
     }
 
     impl<K, V, S, P> AugmentedRBTreeInt<K, V, S, Global, P>
@@ -155,9 +162,9 @@ pub mod internal_details {
                 layout: AugmentedRBTreeLayout::<K, V, S, Global, P> {
                     root: None,
                     node_allocator: NodeAllocator::new(Global),
+                    len: 0,
                     _marker: PhantomData,
                 },
-                len: 0,
             }
         }
     }
@@ -194,19 +201,12 @@ pub mod internal_details {
         where
             K: Ord,
         {
-            let result = self.layout.try_insert_node(key, value);
-            match result {
-                Ok(None) => {
-                    self.len += 1;
-                    result
-                }
-                Ok(Some(_)) | Err(_) => result,
-            }
+            self.layout.try_insert_node(key, value)
         }
 
         /// Returns the number of elements in the tree.
         pub fn len(&self) -> usize {
-            self.len
+            self.layout.len
         }
 
         /// Returns a reference to the value associated with the given key, if it exists in the tree.
@@ -363,7 +363,6 @@ pub mod internal_details {
         {
             self.layout.find_node(key).map(|node| {
                 let (_key, value) = self.layout.delete_node(node);
-                self.len -= 1;
                 value
             })
         }
@@ -386,7 +385,6 @@ pub mod internal_details {
         {
             self.layout.find_node(key).map(|node| {
                 let (k, v) = self.layout.delete_node(node);
-                self.len -= 1;
                 (k, v)
             })
         }
@@ -455,7 +453,6 @@ pub mod internal_details {
             #[allow(clippy::redundant_closure_for_method_calls)]
             let node = self.layout.root.map(|r| r.leftmost())?;
             let (k, v) = self.layout.delete_node(node);
-            self.len -= 1;
             Some((k, v))
         }
 
@@ -479,7 +476,6 @@ pub mod internal_details {
             #[allow(clippy::redundant_closure_for_method_calls)]
             let node = self.layout.root.map(|r| r.rightmost())?;
             let (k, v) = self.layout.delete_node(node);
-            self.len -= 1;
             Some((k, v))
         }
 
@@ -541,7 +537,7 @@ pub mod internal_details {
         /// assert!(!tree.is_empty());
         /// ```
         pub fn is_empty(&self) -> bool {
-            self.len == 0
+            self.layout.len == 0
         }
 
         /// Clears the tree, removing all elements.
@@ -559,7 +555,7 @@ pub mod internal_details {
             if let Some(root) = self.layout.root.take() {
                 unsafe { free_subtree(root, &self.layout.node_allocator.alloc) };
             }
-            self.len = 0;
+            self.layout.len = 0;
         }
     }
 
@@ -593,7 +589,7 @@ pub mod internal_details {
         A: Allocator,
     {
         fn eq(&self, other: &Self) -> bool {
-            if self.len != other.len {
+            if self.len() != other.len() {
                 return false;
             }
             self.iter()
@@ -620,7 +616,6 @@ pub mod internal_details {
         pub fn new_in(alloc: A) -> Self {
             Self {
                 layout: AugmentedRBTreeLayout::new_in(alloc),
-                len: 0,
             }
         }
 
@@ -639,7 +634,7 @@ pub mod internal_details {
         /// assert_eq!(entries, vec![(&1, &"a", &()), (&2, &"b", &()), (&3, &"c", &())]);
         /// ```
         pub fn iter(&self) -> Iter<'_, K, V, S> {
-            Iter::new(self.layout.root, self.len)
+            Iter::new(self.layout.root, self.len())
         }
 
         /// Returns a mutable iterator over the entries of the tree in sorted order by key.
@@ -663,7 +658,7 @@ pub mod internal_details {
         where
             P: TreePolicy<K = K, V = V, S = S>,
         {
-            IterMut::new(self.layout.root, self.len)
+            IterMut::new(self.layout.root, self.len())
         }
 
         /// Returns an iterator over the keys of the tree in sorted order.
@@ -860,10 +855,9 @@ pub mod internal_details {
         /// ```
         fn into_iter(self) -> Self::IntoIter {
             let layout = unsafe { core::ptr::read(&raw const self.layout) };
-            let len = self.len;
             // do not run the destructor for self, since we are taking ownership of the allocator and root
             mem::forget(self);
-            IntoIter::new(layout, len)
+            IntoIter::new(layout)
         }
     }
 
@@ -991,7 +985,7 @@ pub mod internal_details {
         }
     }
 
-    type CloneNodeRefResult<K, V, S> = Result<Option<NodeRef<K, V, S>>, OutOfMemoryError>;
+    //========================= Topology  ========================
 
     impl<K, V, S, A, P> AugmentedRBTreeInt<K, V, S, A, P>
     where
@@ -1072,7 +1066,17 @@ pub mod internal_details {
                 }
             }
         }
+    }
 
+    //========================= Clone  ========================
+
+    type CloneNodeRefResult<K, V, S> = Result<Option<NodeRef<K, V, S>>, OutOfMemoryError>;
+
+    impl<K, V, S, A, P> AugmentedRBTreeInt<K, V, S, A, P>
+    where
+        P: TreePolicy<K = K, V = V, S = S>,
+        A: Allocator,
+    {
         /// Attempts to clone the entire tree, returning a new tree with the same structure and values.
         pub fn try_clone(&self) -> Result<Self, OutOfMemoryError>
         where
@@ -1086,9 +1090,9 @@ pub mod internal_details {
                 layout: AugmentedRBTreeLayout {
                     root: clone_root,
                     node_allocator,
+                    len: self.len(),
                     _marker: PhantomData,
                 },
-                len: self.len,
             })
         }
 
@@ -1208,6 +1212,71 @@ pub mod internal_details {
         fn clone(&self) -> Self {
             self.try_clone()
                 .expect("Failed to clone AugmentedRBTree due to memory allocation failure")
+        }
+    }
+
+    //======================== Cursor API  ========================
+
+    #[cfg(feature = "cursor")]
+    impl<K, V, S, A, P> AugmentedRBTreeInt<K, V, S, A, P>
+    where
+        P: TreePolicy<K = K, V = V, S = S>,
+        A: Allocator,
+    {
+        /// Returns a cursor pointing to the first entry in the tree that is greater than or equal to the given bound.
+        pub fn lower_bound<Q>(&self, bound: Bound<&Q>) -> NavCursor<'_, K, V, S>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord + ?Sized,
+        {
+            let node = match bound {
+                Bound::Included(key) => self.layout.lower_bound(key),
+                Bound::Excluded(key) => self.layout.lower_bound_excluded(key),
+                Bound::Unbounded => self.layout.leftmost(),
+            };
+            NavCursor::new(node)
+        }
+
+        /// Returns a mutable cursor pointing to the first entry in the tree that is greater than or equal to the given bound.
+        pub fn lower_bound_mut<Q>(&mut self, bound: Bound<&Q>) -> NavCursorMut<'_, K, V, S, A, P>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord + ?Sized,
+        {
+            let node = match bound {
+                Bound::Included(key) => self.layout.lower_bound(key),
+                Bound::Excluded(key) => self.layout.lower_bound_excluded(key),
+                Bound::Unbounded => self.layout.leftmost(),
+            };
+            NavCursorMut::new(&mut self.layout, node)
+        }
+
+        /// Returns a cursor pointing to the first entry in the tree that is greater than the given bound.
+        pub fn upper_bound<Q>(&self, bound: Bound<&Q>) -> NavCursor<'_, K, V, S>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord + ?Sized,
+        {
+            let node = match bound {
+                Bound::Included(key) => self.layout.upper_bound(key),
+                Bound::Excluded(key) => self.layout.upper_bound_excluded(key),
+                Bound::Unbounded => self.layout.leftmost(),
+            };
+            NavCursor::new(node)
+        }
+
+        /// Returns a mutable cursor pointing to the first entry in the tree that is greater than the given bound.
+        pub fn upper_bound_mut<Q>(&mut self, bound: Bound<&Q>) -> NavCursorMut<'_, K, V, S, A, P>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord + ?Sized,
+        {
+            let node = match bound {
+                Bound::Included(key) => self.layout.upper_bound(key),
+                Bound::Excluded(key) => self.layout.upper_bound_excluded(key),
+                Bound::Unbounded => self.layout.leftmost(),
+            };
+            NavCursorMut::new(&mut self.layout, node)
         }
     }
 }

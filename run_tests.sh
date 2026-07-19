@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "rbtree_tests" "serde_tests" "topology_tests")
+readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "cursor_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "rbtree_tests" "serde_tests" "topology_tests")
 readonly extra_tests=("fuzz_tests" "stress_tests" "property_tests")
 
 
@@ -65,7 +65,7 @@ run_core() {
     
     cargo $tc test \
         --no-default-features \
-        --features alloc,serde,interval-tree \
+        --features alloc,serde,interval-tree,cursor \
         $(get_test_flags core_tests)
 
 }
@@ -101,7 +101,7 @@ run_cov() {
 
     cargo +nightly llvm-cov test \
         --no-default-features \
-        --features alloc,serde,interval-tree \
+        --features alloc,serde,interval-tree,cursor \
         --branch \
         --no-report \
         $(get_test_flags core_tests)
@@ -132,7 +132,7 @@ run_cov2() {
     FORCE_RUN=$(date +%s) \
         cargo +nightly test \
         --no-default-features \
-        --features alloc,serde,interval-tree \
+        --features alloc,serde,interval-tree,cursor \
         $(get_test_flags core_tests)
 
     grcov . \
@@ -162,23 +162,23 @@ exec_test()
 }
 run_ci()
 {
-    cargo clippy --no-default-features --features "alloc,interval-tree,serde" -- -D warnings
-    cargo clippy --no-default-features --features allocator-api,interval-tree,serde -- -D warnings
+    cargo clippy --no-default-features --features "alloc,interval-tree,serde,cursor" -- -D warnings
+    cargo clippy --no-default-features --features allocator-api,interval-tree,serde,cursor -- -D warnings
 
-    RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --no-default-features --features "nightly,interval-tree,serde"
+    RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --no-default-features --features "nightly,interval-tree,serde,cursor"
     
-    exec_test cargo test --no-default-features --features "alloc,interval-tree,serde" --release --tests 
-    exec_test cargo test --no-default-features --features "allocator-api,interval-tree,serde" --release --tests 
+    exec_test cargo test --no-default-features --features "alloc,interval-tree,serde,cursor" --release --tests 
+    exec_test cargo test --no-default-features --features "allocator-api,interval-tree,serde,cursor" --release --tests 
     exec_test cargo test --no-default-features --release --tests 
 
-    exec_test cargo +nightly test --no-default-features --features "nightly,interval-tree,serde" --release  --tests
-    exec_test cargo +nightly test --no-default-features --features "alloc,nightly,interval-tree,serde" --release --tests 
+    exec_test cargo +nightly test --no-default-features --features "nightly,interval-tree,serde,cursor" --release  --tests
+    exec_test cargo +nightly test --no-default-features --features "alloc,nightly,interval-tree,serde,cursor" --release --tests 
     exec_test cargo test --no-default-features --release --tests
 
     cargo check --target thumbv7m-none-eabi --no-default-features --features "interval-tree"
 
     cargo  test --doc --no-default-features --features "alloc,interval-tree,serde"
-    cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde"
+    cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde,cursor"
 }
 
 run_doctest()

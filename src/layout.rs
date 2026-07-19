@@ -14,6 +14,7 @@ where
 {
     pub(crate) root: Option<NodeRef<K, V, S>>,
     pub(crate) node_allocator: NodeAllocator<A>,
+    pub(crate) len: usize,
     pub(crate) _marker: PhantomData<(K, V, S, fn() -> P)>,
 }
 
@@ -46,6 +47,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         Self {
             root: None,
             node_allocator: NodeAllocator::new(alloc),
+            len: 0,
             _marker: PhantomData,
         }
     }
@@ -61,6 +63,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
+            self.len = 1;
             return Ok(None);
         };
 
@@ -105,6 +108,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         P::augment_upstream(parent);
         self.insert_fixup(new_node);
 
+        self.len += 1;
+
         Ok(None)
     }
 
@@ -123,6 +128,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
+            self.len = 1;
             return Ok(new_node);
         };
 
@@ -163,6 +169,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         P::augment(parent);
         P::augment_upstream(parent);
         self.insert_fixup(new_node);
+
+        self.len += 1;
         Ok(new_node)
     }
 
@@ -861,6 +869,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         let (key, value, _) = unsafe { self.node_allocator.dealloc_node(original_node) };
+
+        self.len -= 1;
+
         (key, value)
     }
 
@@ -1170,6 +1181,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         let (key, value, _) = unsafe { self.node_allocator.dealloc_node(z) };
+        self.len -= 1;
         (key, value)
     }
 
@@ -1295,7 +1307,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>, Q: Ord + ?Sized>
 where
     K: Borrow<Q> + Ord,
 {
-    /// Finds the first node whose key is greater than or equal to `key` (lower bound).
+    /// Finds the smallest x s.t. x >= key (lower bound).
     fn lower_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
         let mut current = self.root;
         let mut result = None;
@@ -1303,6 +1315,7 @@ where
             let node_key = unsafe { node.key() };
             match key.cmp(node_key.borrow()) {
                 core::cmp::Ordering::Less => {
+                    // x > key, so this node is a candidate for lower bound, but we need to look in the left subtree for a smaller candidate
                     result = Some(node);
                     current = node.left();
                 }
@@ -1310,6 +1323,7 @@ where
                     return Some(node);
                 }
                 core::cmp::Ordering::Greater => {
+                    // x < key, so we need to look in the right subtree for a larger candidate
                     current = node.right();
                 }
             }
@@ -1317,7 +1331,31 @@ where
         result
     }
 
-    /// Finds the last node whose key is less than or equal to `key` (upper bound).
+    /// Find the largest node x s.t. x <= key (floor) node.
+    fn floor(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
+        let mut current = self.root;
+        let mut result = None;
+        while let Some(node) = current {
+            let node_key = unsafe { node.key() };
+            match key.cmp(node_key.borrow()) {
+                core::cmp::Ordering::Less => {
+                    // x > key, so we need to look in the left subtree for a smaller candidate
+                    current = node.left();
+                }
+                core::cmp::Ordering::Equal => {
+                    return Some(node);
+                }
+                core::cmp::Ordering::Greater => {
+                    //  x < key, so this node is a candidate for floor, but we need to look in the right subtree for a larger candidate
+                    result = Some(node);
+                    current = node.right();
+                }
+            }
+        }
+        result
+    }
+
+    // find the largest x s.t. for which x <= key (upper bound).
     fn upper_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
         let mut current = self.root;
         let mut result = None;
@@ -1325,12 +1363,15 @@ where
             let node_key = unsafe { node.key() };
             match key.cmp(node_key.borrow()) {
                 core::cmp::Ordering::Less => {
+                    // x > key, so we need to look in the left subtree for a smaller candidate
                     current = node.left();
                 }
                 core::cmp::Ordering::Equal => {
-                    return Some(node);
+                    result = Some(node);
+                    break;
                 }
                 core::cmp::Ordering::Greater => {
+                    // x < key, so we need to look in the right subtree for a larger candidate
                     result = Some(node);
                     current = node.right();
                 }

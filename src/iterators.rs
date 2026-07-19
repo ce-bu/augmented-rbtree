@@ -367,9 +367,10 @@ where
     P: TreePolicy<K = K, V = V, S = S>,
     A: Allocator,
 {
-    pub(crate) fn new(layout: AugmentedRBTreeLayout<K, V, S, A, P>, len: usize) -> Self {
+    pub(crate) fn new(layout: AugmentedRBTreeLayout<K, V, S, A, P>) -> Self {
         let next = layout.root.map(NodeRef::leftmost);
         let back = layout.root.map(NodeRef::rightmost);
+        let len = layout.len;
         Self {
             next,
             back,
@@ -739,9 +740,56 @@ type RangeBoundsResult<K, V, S> = (Option<NodeRef<K, V, S>>, Option<NodeRef<K, V
 
 pub(crate) trait RangeBoundsLimits<K, V, S, Q: ?Sized> {
     fn lower_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>>;
+    fn floor(&self, key: &Q) -> Option<NodeRef<K, V, S>>;
+    #[allow(unused)]
     fn upper_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>>;
     fn leftmost(&self) -> Option<NodeRef<K, V, S>>;
     fn rightmost(&self) -> Option<NodeRef<K, V, S>>;
+
+    /// Finds the smallest x s.t. x > key (strict lower bound).
+    fn lower_bound_excluded(&self, key: &Q) -> Option<NodeRef<K, V, S>>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.lower_bound(key).and_then(|n| {
+            if unsafe { n.key() }.borrow() == key {
+                n.next_node()
+            } else {
+                Some(n)
+            }
+        })
+    }
+
+    /// Find the largest node x s.t x < key (strict floor) node,
+    fn floor_excluded(&self, key: &Q) -> Option<NodeRef<K, V, S>>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.floor(key).and_then(|n| {
+            if unsafe { n.key() }.borrow() == key {
+                n.prev_node()
+            } else {
+                Some(n)
+            }
+        })
+    }
+
+    // find the largest x s.t. for which x < key (strict upper bound).
+    fn upper_bound_excluded(&self, key: &Q) -> Option<NodeRef<K, V, S>>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.upper_bound(key).and_then(|n| {
+            if unsafe { n.key() }.borrow() == key {
+                n.prev_node()
+            } else {
+                Some(n)
+            }
+        })
+    }
 }
 
 fn range_bounds_to_nodes<K, V, S, R, Q>(
@@ -755,31 +803,13 @@ where
 {
     let front = match range.start_bound() {
         Bound::Included(k) => layout.lower_bound(k),
-        Bound::Excluded(k) => {
-            // First node strictly greater than k
-            layout.lower_bound(k).and_then(|n| {
-                if unsafe { n.key() }.borrow() == k {
-                    n.next_node()
-                } else {
-                    Some(n)
-                }
-            })
-        }
+        Bound::Excluded(k) => layout.lower_bound_excluded(k),
         Bound::Unbounded => layout.leftmost(),
     };
 
     let back = match range.end_bound() {
-        Bound::Included(k) => layout.upper_bound(k),
-        Bound::Excluded(k) => {
-            // Last node strictly less than k
-            layout.upper_bound(k).and_then(|n| {
-                if unsafe { n.key() }.borrow() == k {
-                    n.prev_node()
-                } else {
-                    Some(n)
-                }
-            })
-        }
+        Bound::Included(k) => layout.floor(k),
+        Bound::Excluded(k) => layout.floor_excluded(k),
         Bound::Unbounded => layout.rightmost(),
     };
 

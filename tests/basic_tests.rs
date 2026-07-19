@@ -216,8 +216,10 @@ fn check_clear() {
     for &key in &keys {
         tree.insert(key, key);
     }
+    assert_eq!(tree.len(), 500);
     tree.clear();
     assert!(tree.is_empty());
+    assert_eq!(tree.len(), 0);
     assert!(tree.verify_augmentation());
     assert!(tree.verify_properties());
 }

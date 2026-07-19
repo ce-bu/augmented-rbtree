@@ -11,7 +11,8 @@
         "rust-analyzer.cargo.features": [
             "alloc",
             "interval-tree",
-            "serde"
+            "serde",
+            "cursor"
         ],
         "rust-analyzer.cargo.cfgs": [
             "under_rust_analyzer"

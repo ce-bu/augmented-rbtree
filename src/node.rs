@@ -24,6 +24,7 @@ pub(crate) struct Node<K, V, S> {
     pub(crate) value: V,
     pub(crate) stats: S,
     pub(crate) color: Color,
+    pub(crate) _marker: core::marker::PhantomData<(K, V, S)>,
 }
 
 pub mod internal_details {

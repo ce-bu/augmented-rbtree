@@ -33,11 +33,12 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 ] }
 
 [features]
+alloc = []
+allocator-api = ["dep:allocator-api2", "allocator-api2/alloc"]
+cursor = []
 default = ["alloc"]
 debug = []
 interval-tree = ["alloc"]
-alloc = []
-allocator-api = ["dep:allocator-api2", "allocator-api2/alloc"]
 nightly = []
 serde = ["dep:serde", "serde/derive"]
 
@@ -54,7 +55,6 @@ static_assertions = "1.1"
 proptest = "1"
 criterion = { version = "0.8", features = ["html_reports"] }
 serde_json = "1"
-env_logger = "0.11"
 graphviz-rust = "0.9.8"
 itertools = "0.15.0"
 serde = { version = "1", features = ["derive"] }

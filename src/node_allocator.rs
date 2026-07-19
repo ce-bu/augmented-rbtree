@@ -40,6 +40,7 @@ impl<A: Allocator> NodeAllocator<A> {
                 left: None,
                 right: None,
                 parent: None,
+                _marker: core::marker::PhantomData,
             });
 
             Ok(NodeRef::from_raw(NonNull::new_unchecked(raw_ptr)))

@@ -133,6 +133,9 @@ mod policy;
 #[cfg(feature = "serde")]
 mod serde_impl;
 
+#[cfg(feature = "cursor")]
+mod cursor;
+
 #[cfg(any(feature = "nightly", feature = "allocator-api", feature = "alloc"))]
 pub use alloc_proxy::proxy::{AllocError, Allocator, Global, Layout};
 
