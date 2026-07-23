@@ -65,7 +65,7 @@ pub type RBTree<K, V, A = Global> = internal_details::AugmentedRBTreeInt<
 /// A factory for creating `AugmentedRBTree` instances with default parameters.
 #[derive(Debug)]
 pub struct AugmentedRBTreeFactory<G> {
-    _marker: core::marker::PhantomData<G>,
+    _marker: core::marker::PhantomData<fn() -> G>,
 }
 
 impl<G> AugmentedRBTreeFactory<G> {

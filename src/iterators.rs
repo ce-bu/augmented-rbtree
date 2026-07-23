@@ -24,10 +24,7 @@ pub mod internal_details {
         ops::{Deref, DerefMut},
     };
 
-    use crate::{
-        node::{Node, internal_details::NodeRef},
-        policy::internal_details::TreePolicy,
-    };
+    use crate::{node::internal_details::NodeRef, policy::internal_details::TreePolicy};
 
     /// A mutable reference to a value in an `AugmentedRBTree`.
     ///
@@ -39,7 +36,7 @@ pub mod internal_details {
         P: TreePolicy<K = K, V = V, S = S>,
     {
         node: NodeRef<K, V, S>,
-        marker: PhantomData<(&'a mut Node<K, V, S>, &'a P)>,
+        marker: PhantomData<(&'a mut (K, V, S), &'a P)>,
     }
 
     impl<K, V, S, P> ValMutInt<'_, K, V, S, P>

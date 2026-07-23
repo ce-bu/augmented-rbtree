@@ -34,7 +34,7 @@ Default configuration uses `alloc`:
 
 ```toml
 [dependencies]
-augmented-rbtree = "0.1"
+augmented-rbtree = "0.2"
 ```
 
 ## Quick start
@@ -95,7 +95,7 @@ Common use cases: order-statistics trees, interval trees, range-sum trees, and r
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.1", features = ["interval-tree"] }
+augmented-rbtree = { version = "0.2", features = ["interval-tree"] }
 ```
 
 ```rust
@@ -116,21 +116,21 @@ Use strict `no_std` mode with no default features:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.1", default-features = false }
+augmented-rbtree = { version = "0.2", default-features = false }
 ```
 
 Use custom allocator support on stable:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.1", default-features = false, features = ["allocator-api"] }
+augmented-rbtree = { version = "0.2", default-features = false, features = ["allocator-api"] }
 ```
 
 Use nightly allocator API:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.1", default-features = false, features = ["nightly"] }
+augmented-rbtree = { version = "0.2", default-features = false, features = ["nightly"] }
 ```
 
 ## Performance

@@ -47,7 +47,7 @@ pub mod internal_details {
     /// A default tree policy that uses the provided augmentation type `G` and allocator `A`.
     #[derive(Debug)]
     pub struct DefaultTraitPolicy<K, V, G, S, A, AS> {
-        _marker: core::marker::PhantomData<(K, V, G, S, A, AS)>,
+        _marker: core::marker::PhantomData<fn() -> (K, V, G, S, A, AS)>,
     }
 
     impl<K, V, G, S, A> TreePolicy for DefaultTraitPolicy<K, V, G, S, A, FullAugmentationStrategy>

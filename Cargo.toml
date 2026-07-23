@@ -1,6 +1,6 @@
 [package]
 name = "augmented-rbtree"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Cezar Bulinaru <cbulinaru@gmail.com>"]
 edition = "2024"
 description = "An augmented red-black tree with generic, user-defined per-node statistics — enables interval trees, order-statistics trees, range-sum trees, and more."
@@ -8,8 +8,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ce-bu/augmented-rbtree"
 homepage = "https://github.com/ce-bu/augmented-rbtree"
 documentation = "https://docs.rs/augmented-rbtree"
-keywords = ["tree", "augmented", "interval-tree", "balanced", "data-structure"]
-categories = ["data-structures", "algorithms", "no-std"]
+keywords = ["rbtree", "augmented", "interval-tree", "no_std", "data-structure"]
+categories = ["data-structures", "no-std"]
 readme = "README.md"
 rust-version = "1.87"
 exclude = [

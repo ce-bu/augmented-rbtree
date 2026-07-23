@@ -14,7 +14,7 @@ where
 {
     pub(crate) root: Option<NodeRef<K, V, S>>,
     pub(crate) node_allocator: NodeAllocator<A>,
-    pub(crate) _marker: PhantomData<fn() -> P>,
+    pub(crate) _marker: PhantomData<(K, V, S, fn() -> P)>,
 }
 
 unsafe impl<K, V, S, A, P> Send for AugmentedRBTreeLayout<K, V, S, A, P>
