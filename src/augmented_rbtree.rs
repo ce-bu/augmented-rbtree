@@ -1216,7 +1216,7 @@ pub mod internal_details {
     }
 
     /// This parameter is used to indicate the initial location of the cursor in the tree.
-    #[derive(Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum NavCursorLocation<Q> {
         /// Root of the tree
         Root,
@@ -1235,7 +1235,7 @@ pub mod internal_details {
         P: TreePolicy<K = K, V = V, S = S>,
         A: Allocator,
     {
-        pub fn nav_cursor<Q>(&self, location: &NavCursorLocation<&Q>) -> NavCursor<'_, K, V, S>
+        pub fn nav_cursor<Q>(&self, location: NavCursorLocation<&Q>) -> NavCursor<'_, K, V, S>
         where
             K: Borrow<Q> + Ord,
             Q: Ord,

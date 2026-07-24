@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use crate::node::internal_details::NodeRef;
+use crate::{NavCursor, node::internal_details::NodeRef};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TraversalPhase {
@@ -11,14 +11,26 @@ enum TraversalPhase {
 
 /// A policy trait that separates structural pruning rules from the tree architecture.
 pub trait InOrderPruningPolicy<K, V, S> {
-    /// Evaluates if the current node is a match for the target criteria.
+    /// Evaluates if the current node satisfies the lookup constraints.
     fn is_match(&self, key: &K, value: &V, stats: &S) -> bool;
 
     /// Determines if the left child branch should be explored or pruned.
-    fn should_explore_left(&self, left_key: &K, left_value: &V, left_stats: &S) -> bool;
+    fn should_explore_left(
+        &self,
+        left_key: &K,
+        left_value: &V,
+        left_stats: &S,
+        current_key: &K,
+    ) -> bool;
 
     /// Determines if the right child branch should be explored or pruned.
-    fn should_explore_right(&self, right_key: &K, right_value: &V, right_stats: &S) -> bool;
+    fn should_explore_right(
+        &self,
+        right_key: &K,
+        right_value: &V,
+        right_stats: &S,
+        current_key: &K,
+    ) -> bool;
 }
 
 /// A stateful, direction-aware iterator that performs an in-order Depth-First Search (DFS)
@@ -37,6 +49,8 @@ pub trait InOrderPruningPolicy<K, V, S> {
 /// * `V` - The tree node value type.
 /// * `S` - The augmented subtree statistics type used by the pruning policy.
 /// * `P` - A type implementing [`InOrderPruningPolicy`] to dictate matching and pruning criteria.
+
+#[derive(Debug)]
 pub struct InOrderIter<'a, K, V, S, P>
 where
     P: InOrderPruningPolicy<K, V, S>,
@@ -52,7 +66,7 @@ impl<'a, K, V, S, P> Iterator for InOrderIter<'a, K, V, S, P>
 where
     P: InOrderPruningPolicy<K, V, S>,
 {
-    type Item = (&'a K, &'a V, &'a S);
+    type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -69,7 +83,7 @@ where
                             unsafe { (left_node.key(), left_node.value(), left_node.stats()) };
                         if self
                             .policy
-                            .should_explore_left(left_key, left_value, left_stats)
+                            .should_explore_left(left_key, left_value, left_stats, key)
                         {
                             self.cur = Some(left_node);
                             self.direction = TraversalPhase::Above; // Reset direction for the left sub-hierarchy
@@ -89,10 +103,12 @@ where
                     if let Some(right_node) = node.right() {
                         let (right_key, right_value, right_stats) =
                             unsafe { (right_node.key(), right_node.value(), right_node.stats()) };
-                        if self
-                            .policy
-                            .should_explore_right(right_key, right_value, right_stats)
-                        {
+                        if self.policy.should_explore_right(
+                            right_key,
+                            right_value,
+                            right_stats,
+                            key,
+                        ) {
                             // OK this tells me I can resume search in the right subtree.
                             self.cur = Some(right_node);
                             self.direction = TraversalPhase::Above; // Reset direction for the right sub-hierarchy
@@ -100,7 +116,7 @@ where
                             // Yield the current matching parent node.
                             // The cursor is staged inside the fresh right subtree for the next loop.
                             if is_matching_node {
-                                return Some((key, value, stats));
+                                return Some((key, value));
                             }
                             continue;
                         }
@@ -109,7 +125,7 @@ where
                     // I am not able to move to the right subtree, so I need to ascend and update the direction state
                     if is_matching_node {
                         self.ascend_and_update_state();
-                        return Some((key, value, stats));
+                        return Some((key, value));
                     }
 
                     self.ascend_and_update_state();
@@ -137,6 +153,32 @@ where
             cur,
             policy,
             subtree_root: cur, // Directly passes the option without conditional blocks
+            direction: TraversalPhase::Above,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Constructs a new `InOrderIter` starting at the node currently pointed to by a [`NavCursor`].
+    ///
+    /// This allows power-users to initialize a highly customized pruning search originating from
+    /// any arbitrary bookmark or position in the tree structure.
+    ///
+    /// # Example
+    /// ```rust
+    /// // 1. Grab a safe public cursor from anywhere in the tree
+    /// let mut cursor = tree.lower_bound(Bound::Included(&10));
+    ///
+    /// // 2. Spin up an InOrderIter from that cursor position with a custom policy
+    /// let custom_iterator = InOrderIter::from_cursor(cursor, MyCustomPolicy);
+    /// ```
+    pub fn from_cursor<'a>(cursor: NavCursor<'a, K, V, S>, policy: P) -> Self {
+        // Safe bridge: Unpack the internal Option<NodeRef> from the public cursor
+        let starting_node = cursor.current;
+
+        Self {
+            cur: starting_node,
+            policy,
+            subtree_root: starting_node,
             direction: TraversalPhase::Above,
             _marker: PhantomData,
         }

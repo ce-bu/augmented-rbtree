@@ -32,10 +32,10 @@ use crate::{
     Augment, AugmentedRBTree,
     alloc_proxy::proxy::{Allocator, Global},
     augmented_rbtree::internal_details::NavCursorLocation,
-    cursor::NavCursor,
     node::internal_details::NodeRef,
+    search::{InOrderIter, InOrderPruningPolicy},
 };
-use core::{borrow::Borrow, fmt};
+use core::{borrow::Borrow, fmt, marker::PhantomData};
 
 // ============================================================================
 // Interval type
@@ -156,6 +156,55 @@ impl<T: Ord + Clone + Default, V> Augment<Interval<T>, V> for MaxHi<T> {
     }
 }
 
+/// internal details
+pub mod internal_details {
+    use core::marker::PhantomData;
+
+    /// An internal pruning strategy that governs interval intersection queries.
+    #[derive(Debug)]
+    pub struct IntervalOverlapPolicy<T, KBound> {
+        pub(crate) lo: KBound,
+        pub(crate) hi: KBound,
+        pub(crate) _marker: PhantomData<T>,
+    }
+}
+
+impl<T: Ord, KBound, V> InOrderPruningPolicy<Interval<T>, V, T>
+    for internal_details::IntervalOverlapPolicy<T, KBound>
+where
+    KBound: Borrow<T>,
+{
+    #[inline]
+    fn is_match(&self, key: &Interval<T>, _value: &V, _stats: &T) -> bool {
+        // Equivalent to: interval.overlaps_range(lo, hi)
+        key.lo <= *self.hi.borrow() && key.hi >= *self.lo.borrow()
+    }
+
+    #[inline]
+    fn should_explore_left(
+        &self,
+        _left_key: &Interval<T>,
+        _left_value: &V,
+        left_max_hi: &T,
+        _current_key: &Interval<T>,
+    ) -> bool {
+        // Equivalent to recursive entry guard: if left_max_hi < lo { return; }
+        *left_max_hi >= *self.lo.borrow()
+    }
+
+    #[inline]
+    fn should_explore_right(
+        &self,
+        _right_key: &Interval<T>,
+        _right_value: &V,
+        right_max_hi: &T,
+        current_key: &Interval<T>,
+    ) -> bool {
+        // 1. Right Max High Gate: if right_max_hi < lo { return; }
+        // 2. Parent Boundary Gate: if current_key.lo > hi { return; }
+        *right_max_hi >= *self.lo.borrow() && current_key.lo <= *self.hi.borrow()
+    }
+}
 // ============================================================================
 // IntervalTree
 // ============================================================================
@@ -283,11 +332,23 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     where
         K: Borrow<T>,
     {
-        let cur = self.inner.nav_cursor(&NavCursorLocation::Root);
+        // 1. Leverage your explicit enum-driven API to retrieve a safe cursor tracking the Root.
+        // Assuming your inner tree layout maps to an `AugmentedRBTreeInt` instance or similar internal tree handle.
+        let cursor = self.inner.nav_cursor(NavCursorLocation::Root);
 
-        OverlapIter { cur, lo, hi }
+        // 2. Unpack the underlying Option<NodeRef> directly from the safe public cursor wrapper.
+        let root_node = cursor.current;
+
+        // 3. Assemble the concrete pruning rule properties.
+        let policy = internal_details::IntervalOverlapPolicy {
+            lo,
+            hi,
+            _marker: PhantomData,
+        };
+
+        // 4. Construct and return the stateful InOrderIter engine on raw pointer nodes.
+        InOrderIter::new(root_node, policy)
     }
-
     // Returns an iterator over all intervals that **contain** the point `p`.
     //
     // An interval `[a, b]` contains `p` iff `a <= p <= b`.
@@ -360,35 +421,9 @@ impl<T: Ord + Clone + Default + fmt::Debug, V: fmt::Debug> fmt::Debug for Interv
 // ============================================================================
 
 /// Iterator over overlapping intervals. Created by [`IntervalTree::query_overlap`].
-pub struct OverlapIter<'a, T: Ord + Clone + Default, V, K>
-where
-    K: Borrow<T>,
-{
-    cur: NavCursor<'a, Interval<T>, V, T>,
-    lo: K,
-    hi: K,
-}
+pub type OverlapIter<'a, T, V, K> =
+    InOrderIter<'a, Interval<T>, V, T, internal_details::IntervalOverlapPolicy<T, K>>;
 
-impl<'a, T: Ord + Clone + Default + 'a, V: 'a, K> Iterator for OverlapIter<'a, T, V, K>
-where
-    K: Borrow<T>,
-{
-    type Item = (&'a Interval<T>, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {}
-        None
-    }
-}
-
-impl<T: Ord + Clone + Default, V, K> fmt::Debug for OverlapIter<'_, T, V, K>
-where
-    K: Borrow<T>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OverlapIter").finish()
-    }
-}
 // ============================================================================
 // Tree traversal helpers
 // ============================================================================
