@@ -136,7 +136,7 @@ pub mod internal_details {
     };
 
     #[cfg(feature = "cursor")]
-    use crate::cursor::{NavCursor, NavCursorMut};
+    use crate::cursor::NavCursor;
 
     #[cfg(feature = "cursor")]
     use crate::iterators::RangeBoundsLimits;
@@ -1215,6 +1215,18 @@ pub mod internal_details {
         }
     }
 
+    /// This parameter is used to indicate the initial location of the cursor in the tree.
+    #[derive(Debug)]
+    pub enum NavCursorLocation<Q> {
+        /// Root of the tree
+        Root,
+
+        /// The cursor will be positioned at the first node whose key is greater than or equal to the given key.
+        LowerBound(Bound<Q>),
+
+        /// The cursor will be positioned at the first node whose key is greater than the given key.
+        UpperBound(Bound<Q>),
+    }
     //======================== Cursor API  ========================
 
     #[cfg(feature = "cursor")]
@@ -1223,60 +1235,24 @@ pub mod internal_details {
         P: TreePolicy<K = K, V = V, S = S>,
         A: Allocator,
     {
-        /// Returns a cursor pointing to the first entry in the tree that is greater than or equal to the given bound.
-        pub fn lower_bound<Q>(&self, bound: Bound<&Q>) -> NavCursor<'_, K, V, S>
+        pub fn nav_cursor<Q>(&self, location: &NavCursorLocation<&Q>) -> NavCursor<'_, K, V, S>
         where
             K: Borrow<Q> + Ord,
-            Q: Ord + ?Sized,
+            Q: Ord,
         {
-            let node = match bound {
-                Bound::Included(key) => self.layout.lower_bound(key),
-                Bound::Excluded(key) => self.layout.lower_bound_excluded(key),
-                Bound::Unbounded => self.layout.leftmost(),
-            };
-            NavCursor::new(node)
-        }
-
-        /// Returns a mutable cursor pointing to the first entry in the tree that is greater than or equal to the given bound.
-        pub fn lower_bound_mut<Q>(&mut self, bound: Bound<&Q>) -> NavCursorMut<'_, K, V, S, A, P>
-        where
-            K: Borrow<Q> + Ord,
-            Q: Ord + ?Sized,
-        {
-            let node = match bound {
-                Bound::Included(key) => self.layout.lower_bound(key),
-                Bound::Excluded(key) => self.layout.lower_bound_excluded(key),
-                Bound::Unbounded => self.layout.leftmost(),
-            };
-            NavCursorMut::new(&mut self.layout, node)
-        }
-
-        /// Returns a cursor pointing to the first entry in the tree that is greater than the given bound.
-        pub fn upper_bound<Q>(&self, bound: Bound<&Q>) -> NavCursor<'_, K, V, S>
-        where
-            K: Borrow<Q> + Ord,
-            Q: Ord + ?Sized,
-        {
-            let node = match bound {
-                Bound::Included(key) => self.layout.upper_bound(key),
-                Bound::Excluded(key) => self.layout.upper_bound_excluded(key),
-                Bound::Unbounded => self.layout.leftmost(),
-            };
-            NavCursor::new(node)
-        }
-
-        /// Returns a mutable cursor pointing to the first entry in the tree that is greater than the given bound.
-        pub fn upper_bound_mut<Q>(&mut self, bound: Bound<&Q>) -> NavCursorMut<'_, K, V, S, A, P>
-        where
-            K: Borrow<Q> + Ord,
-            Q: Ord + ?Sized,
-        {
-            let node = match bound {
-                Bound::Included(key) => self.layout.upper_bound(key),
-                Bound::Excluded(key) => self.layout.upper_bound_excluded(key),
-                Bound::Unbounded => self.layout.leftmost(),
-            };
-            NavCursorMut::new(&mut self.layout, node)
+            match location {
+                NavCursorLocation::Root => NavCursor::new(self.layout.root),
+                NavCursorLocation::LowerBound(bound) => match bound {
+                    Bound::Included(key) => NavCursor::new(self.layout.lower_bound(key)),
+                    Bound::Excluded(key) => NavCursor::new(self.layout.lower_bound_excluded(key)),
+                    Bound::Unbounded => NavCursor::new(self.layout.leftmost()),
+                },
+                NavCursorLocation::UpperBound(bound) => match bound {
+                    Bound::Included(key) => NavCursor::new(self.layout.upper_bound(key)),
+                    Bound::Excluded(key) => NavCursor::new(self.layout.upper_bound_excluded(key)),
+                    Bound::Unbounded => NavCursor::new(self.layout.rightmost()),
+                },
+            }
         }
     }
 }

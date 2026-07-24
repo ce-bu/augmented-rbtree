@@ -31,9 +31,10 @@
 use crate::{
     Augment, AugmentedRBTree,
     alloc_proxy::proxy::{Allocator, Global},
+    augmented_rbtree::internal_details::NavCursorLocation,
+    cursor::NavCursor,
     node::internal_details::NodeRef,
 };
-use alloc::vec::Vec;
 use core::{borrow::Borrow, fmt};
 
 // ============================================================================
@@ -278,33 +279,27 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     /// let overlapping: Vec<_> = tree.query_overlap(4, 7).collect();
     /// assert_eq!(overlapping.len(), 3); // [1,5], [3,8] and [6,10] all overlap [4,7]
     /// ```
-    pub fn query_overlap<K>(&self, lo: K, hi: K) -> OverlapIter<'_, T, V, A>
+    pub fn query_overlap<K>(&self, lo: K, hi: K) -> OverlapIter<'_, T, V, K>
     where
         K: Borrow<T>,
     {
-        let lo = lo.borrow();
-        let hi = hi.borrow();
-        let mut results = Vec::new();
-        if let Some(root) = self.inner.layout.root {
-            collect_overlapping(root, lo, hi, &mut results);
-        }
-        OverlapIter {
-            _tree: self,
-            stack: results.into_iter(),
-        }
+        let cur = self.inner.nav_cursor(&NavCursorLocation::Root);
+
+        OverlapIter { cur, lo, hi }
     }
 
-    /// Returns an iterator over all intervals that **contain** the point `p`.
-    ///
-    /// An interval `[a, b]` contains `p` iff `a <= p <= b`.
-    ///
-    /// Complexity: O(k log n) where k is the number of matching intervals.
-    pub fn query_point<K>(&self, point: K) -> impl Iterator<Item = (&Interval<T>, &V)>
-    where
-        K: Borrow<T>,
-    {
-        self.query_overlap(point.borrow(), point.borrow())
-    }
+    // Returns an iterator over all intervals that **contain** the point `p`.
+    //
+    // An interval `[a, b]` contains `p` iff `a <= p <= b`.
+    //
+    // Complexity: O(k log n) where k is the number of matching intervals.
+
+    // pub fn query_point<K>(&self, point: K) -> impl Iterator<Item = (&Interval<T>, &V)>
+    // where
+    //     K: Borrow<T>,
+    // {
+    //     self.query_overlap(point, )
+    // }
 
     /// Returns `true` if any interval in the tree overlaps with `[lo, hi]`.
     ///
@@ -365,77 +360,38 @@ impl<T: Ord + Clone + Default + fmt::Debug, V: fmt::Debug> fmt::Debug for Interv
 // ============================================================================
 
 /// Iterator over overlapping intervals. Created by [`IntervalTree::query_overlap`].
-pub struct OverlapIter<'a, T: Ord + Clone + Default, V, A: Allocator = Global> {
-    _tree: &'a IntervalTree<T, V, A>,
-    stack: <Vec<(*const Interval<T>, *const V)> as IntoIterator>::IntoIter,
+pub struct OverlapIter<'a, T: Ord + Clone + Default, V, K>
+where
+    K: Borrow<T>,
+{
+    cur: NavCursor<'a, Interval<T>, V, T>,
+    lo: K,
+    hi: K,
 }
 
-impl<'a, T: Ord + Clone + Default, V, A: Allocator> Iterator for OverlapIter<'a, T, V, A> {
+impl<'a, T: Ord + Clone + Default + 'a, V: 'a, K> Iterator for OverlapIter<'a, T, V, K>
+where
+    K: Borrow<T>,
+{
     type Item = (&'a Interval<T>, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (k_ptr, v_ptr) = self.stack.next()?;
-        // Safety: pointers were obtained from valid tree nodes that live for 'a
-        // (tree is borrowed for 'a). The tree is not mutated during iteration.
-        Some(unsafe { (&*k_ptr, &*v_ptr) })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.stack.size_hint()
+        loop {}
+        None
     }
 }
 
-impl<T: Ord + Clone + Default, V, A: Allocator> fmt::Debug for OverlapIter<'_, T, V, A> {
+impl<T: Ord + Clone + Default, V, K> fmt::Debug for OverlapIter<'_, T, V, K>
+where
+    K: Borrow<T>,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OverlapIter")
-            .field("stack", &self.stack)
-            .finish()
+        f.debug_struct("OverlapIter").finish()
     }
 }
 // ============================================================================
 // Tree traversal helpers
 // ============================================================================
-
-/// Recursively collect all nodes whose interval overlaps [lo, hi].
-fn collect_overlapping<T, V>(
-    node: NodeRef<Interval<T>, V, T>,
-    lo: &T,
-    hi: &T,
-    results: &mut Vec<(*const Interval<T>, *const V)>,
-) where
-    T: Ord + Clone + Default,
-{
-    // Pruning: if the max hi in this subtree < lo, no overlap possible
-    let subtree_max_hi = unsafe { node.stats() };
-    if subtree_max_hi < lo {
-        return;
-    }
-
-    let interval = unsafe { node.key() };
-
-    // Recurse left (may contain overlaps)
-    if let Some(left) = node.left() {
-        collect_overlapping(left, lo, hi, results);
-    }
-
-    // If this node's lo > hi, no need to check right subtree or this node
-    if &interval.lo > hi {
-        return;
-    }
-
-    // Check this node
-    if interval.overlaps_range(lo, hi) {
-        results.push((
-            core::ptr::addr_of!(*interval),
-            core::ptr::addr_of!(*{ unsafe { node.value() } }),
-        ));
-    }
-
-    // Recurse right
-    if let Some(right) = node.right() {
-        collect_overlapping(right, lo, hi, results);
-    }
-}
 
 /// O(log n) check: does any interval in this subtree overlap [lo, hi]?
 fn any_overlapping<T, V>(node: NodeRef<Interval<T>, V, T>, lo: &T, hi: &T) -> bool

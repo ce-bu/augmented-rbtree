@@ -16,6 +16,7 @@ pub(crate) enum NilSide {
     Right,
 }
 
+#[derive(Clone)]
 pub(crate) struct Node<K, V, S> {
     pub(crate) left: Option<NonNull<Node<K, V, S>>>,
     pub(crate) right: Option<NonNull<Node<K, V, S>>>,

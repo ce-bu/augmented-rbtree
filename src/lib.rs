@@ -129,6 +129,7 @@ mod layout;
 mod node;
 mod node_allocator;
 mod policy;
+mod search;
 
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -152,3 +153,6 @@ pub use policy::internal_details::TreePolicy;
 
 #[cfg(feature = "serde")]
 pub use serde_impl::AugmentedRBTreeSeed;
+
+#[cfg(feature = "cursor")]
+pub use cursor::{NavCursor, NavCursorMut};

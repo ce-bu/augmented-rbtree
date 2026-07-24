@@ -38,7 +38,7 @@ allocator-api = ["dep:allocator-api2", "allocator-api2/alloc"]
 cursor = []
 default = ["alloc"]
 debug = []
-interval-tree = ["alloc"]
+interval-tree = ["cursor"]
 nightly = []
 serde = ["dep:serde", "serde/derive"]
 
