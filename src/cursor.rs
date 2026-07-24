@@ -76,7 +76,7 @@ use core::marker::PhantomData;
 ///     println!("Processing subsequent node: {k}"); // Processes 20, 25, 30...
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Copy)]
 pub struct NavCursor<'a, K, V, S> {
     pub(crate) current: Option<NodeRef<K, V, S>>,
     _marker: PhantomData<&'a ()>,

@@ -32,7 +32,6 @@ use crate::{
     Augment, AugmentedRBTree,
     alloc_proxy::proxy::{Allocator, Global},
     augmented_rbtree::internal_details::NavCursorLocation,
-    node::internal_details::NodeRef,
     search::{InOrderIter, InOrderPruningPolicy},
 };
 use core::{borrow::Borrow, fmt, marker::PhantomData};
@@ -176,7 +175,6 @@ where
 {
     #[inline]
     fn is_match(&self, key: &Interval<T>, _value: &V, _stats: &T) -> bool {
-        // Equivalent to: interval.overlaps_range(lo, hi)
         key.lo <= *self.hi.borrow() && key.hi >= *self.lo.borrow()
     }
 
@@ -188,7 +186,6 @@ where
         left_max_hi: &T,
         _current_key: &Interval<T>,
     ) -> bool {
-        // Equivalent to recursive entry guard: if left_max_hi < lo { return; }
         *left_max_hi >= *self.lo.borrow()
     }
 
@@ -200,11 +197,10 @@ where
         right_max_hi: &T,
         current_key: &Interval<T>,
     ) -> bool {
-        // 1. Right Max High Gate: if right_max_hi < lo { return; }
-        // 2. Parent Boundary Gate: if current_key.lo > hi { return; }
         *right_max_hi >= *self.lo.borrow() && current_key.lo <= *self.hi.borrow()
     }
 }
+
 // ============================================================================
 // IntervalTree
 // ============================================================================
@@ -332,35 +328,32 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     where
         K: Borrow<T>,
     {
-        // 1. Leverage your explicit enum-driven API to retrieve a safe cursor tracking the Root.
-        // Assuming your inner tree layout maps to an `AugmentedRBTreeInt` instance or similar internal tree handle.
         let cursor = self.inner.nav_cursor(NavCursorLocation::Root);
-
-        // 2. Unpack the underlying Option<NodeRef> directly from the safe public cursor wrapper.
         let root_node = cursor.current;
 
-        // 3. Assemble the concrete pruning rule properties.
+        // The policy owns the reference `&Q`, which is perfectly fine
+        // since the reference lives for the duration of the query.
         let policy = internal_details::IntervalOverlapPolicy {
             lo,
             hi,
             _marker: PhantomData,
         };
 
-        // 4. Construct and return the stateful InOrderIter engine on raw pointer nodes.
         InOrderIter::new(root_node, policy)
     }
-    // Returns an iterator over all intervals that **contain** the point `p`.
-    //
-    // An interval `[a, b]` contains `p` iff `a <= p <= b`.
-    //
-    // Complexity: O(k log n) where k is the number of matching intervals.
-
-    // pub fn query_point<K>(&self, point: K) -> impl Iterator<Item = (&Interval<T>, &V)>
-    // where
-    //     K: Borrow<T>,
-    // {
-    //     self.query_overlap(point, )
-    // }
+    /// Returns an iterator over all intervals that **contain** the point `p`.
+    ///
+    /// An interval `[a, b]` contains `p` iff `a <= p <= b`.
+    ///
+    /// Complexity: O(k log n) where k is the number of matching intervals.
+    pub fn query_point<K>(&self, point: K) -> impl Iterator<Item = (&Interval<T>, &V)>
+    where
+        K: Borrow<T> + Clone,
+    {
+        let lo = point.clone();
+        let hi = point;
+        self.query_overlap::<K>(lo, hi)
+    }
 
     /// Returns `true` if any interval in the tree overlaps with `[lo, hi]`.
     ///
@@ -370,13 +363,7 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     where
         K: Borrow<T>,
     {
-        let lo = lo.borrow();
-        let hi = hi.borrow();
-        if let Some(root) = self.inner.layout.root {
-            any_overlapping(root, lo, hi)
-        } else {
-            false
-        }
+        self.query_overlap(lo, hi).next().is_some()
     }
 
     /// Returns `true` if any interval contains the given point.
@@ -385,9 +372,9 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     #[must_use]
     pub fn any_contains_point<K>(&self, point: K) -> bool
     where
-        K: Borrow<T>,
+        K: Borrow<T> + Clone,
     {
-        self.any_overlaps(point.borrow(), point.borrow())
+        self.any_overlaps(point.clone(), point)
     }
 
     /// Returns the first overlapping interval with `[lo, hi]`, if any.
@@ -396,17 +383,11 @@ impl<T: Ord + Clone + Default, V, A: Allocator> IntervalTree<T, V, A> {
     ///
     /// Complexity: O(log n).
     #[must_use]
-    pub fn first_overlap<K>(&self, lo: K, hi: K) -> Option<(&Interval<T>, &V)>
+    pub fn first_overlap<K>(&self, lo: K, hi: K) -> Option<(&'_ Interval<T>, &'_ V)>
     where
         K: Borrow<T>,
     {
-        let lo = lo.borrow();
-        let hi = hi.borrow();
-        if let Some(root) = self.inner.layout.root {
-            first_overlapping(root, lo, hi)
-        } else {
-            None
-        }
+        self.query_overlap(lo, hi).next()
     }
 }
 
@@ -423,82 +404,6 @@ impl<T: Ord + Clone + Default + fmt::Debug, V: fmt::Debug> fmt::Debug for Interv
 /// Iterator over overlapping intervals. Created by [`IntervalTree::query_overlap`].
 pub type OverlapIter<'a, T, V, K> =
     InOrderIter<'a, Interval<T>, V, T, internal_details::IntervalOverlapPolicy<T, K>>;
-
-// ============================================================================
-// Tree traversal helpers
-// ============================================================================
-
-/// O(log n) check: does any interval in this subtree overlap [lo, hi]?
-fn any_overlapping<T, V>(node: NodeRef<Interval<T>, V, T>, lo: &T, hi: &T) -> bool
-where
-    T: Ord + Clone + Default,
-{
-    let subtree_max_hi = unsafe { node.stats() };
-    if subtree_max_hi < lo {
-        return false;
-    }
-
-    let interval = unsafe { node.key() };
-    if interval.overlaps_range(lo, hi) {
-        return true;
-    }
-
-    // Recurse: check left if it could contain a match
-    let left_has_match = node.left().is_some_and(|l| {
-        let l_max = unsafe { l.stats() };
-        l_max >= lo && any_overlapping(l, lo, hi)
-    });
-
-    if left_has_match {
-        return true;
-    }
-
-    if &interval.lo <= hi {
-        if let Some(right) = node.right() {
-            return any_overlapping(right, lo, hi);
-        }
-    }
-
-    false
-}
-
-/// O(log n) find first (smallest lo) overlapping interval.
-fn first_overlapping<'a, T, V>(
-    node: NodeRef<Interval<T>, V, T>,
-    lo: &T,
-    hi: &T,
-) -> Option<(&'a Interval<T>, &'a V)>
-where
-    T: Ord + Clone + Default,
-{
-    let subtree_max_hi = unsafe { node.stats() };
-    if subtree_max_hi < lo {
-        return None;
-    }
-
-    let interval = unsafe { node.key() };
-
-    // Try left first (gives smaller lo)
-    let left_result = node.left().and_then(|l| first_overlapping(l, lo, hi));
-
-    if left_result.is_some() {
-        return left_result;
-    }
-
-    // Check this node
-    if interval.overlaps_range(lo, hi) {
-        return Some((interval, unsafe { node.value() }));
-    }
-
-    // Try right
-    if &interval.lo <= hi {
-        if let Some(right) = node.right() {
-            return first_overlapping(right, lo, hi);
-        }
-    }
-
-    None
-}
 
 #[cfg(test)]
 mod tests {

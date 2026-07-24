@@ -136,7 +136,7 @@ pub mod internal_details {
     };
 
     #[cfg(feature = "cursor")]
-    use crate::cursor::NavCursor;
+    use crate::{NavCursorMut, cursor::NavCursor};
 
     #[cfg(feature = "cursor")]
     use crate::iterators::RangeBoundsLimits;
@@ -1251,6 +1251,50 @@ pub mod internal_details {
                     Bound::Included(key) => NavCursor::new(self.layout.upper_bound(key)),
                     Bound::Excluded(key) => NavCursor::new(self.layout.upper_bound_excluded(key)),
                     Bound::Unbounded => NavCursor::new(self.layout.rightmost()),
+                },
+            }
+        }
+
+        pub fn nav_cursor_mut<Q>(
+            &mut self,
+            location: NavCursorLocation<&Q>,
+        ) -> NavCursorMut<'_, K, V, S, A, P>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord,
+        {
+            match location {
+                NavCursorLocation::Root => {
+                    let node = self.layout.root;
+                    NavCursorMut::new(&mut self.layout, node)
+                }
+                NavCursorLocation::LowerBound(bound) => match bound {
+                    Bound::Included(key) => {
+                        let node = self.layout.lower_bound(key);
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
+                    Bound::Excluded(key) => {
+                        let node = self.layout.lower_bound_excluded(key);
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
+                    Bound::Unbounded => {
+                        let node = self.layout.leftmost();
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
+                },
+                NavCursorLocation::UpperBound(bound) => match bound {
+                    Bound::Included(key) => {
+                        let node = self.layout.upper_bound(key);
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
+                    Bound::Excluded(key) => {
+                        let node = self.layout.upper_bound_excluded(key);
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
+                    Bound::Unbounded => {
+                        let node = self.layout.rightmost();
+                        NavCursorMut::new(&mut self.layout, node)
+                    }
                 },
             }
         }

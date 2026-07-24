@@ -54,37 +54,37 @@ fn interval_overlap_boundary() {
     assert!(tree.any_contains_point(5));
 }
 
-// #[test]
-// fn interval_query_point() {
-//     let mut tree = IntervalTree::new();
-//     tree.insert(Interval::new(1, 10), "wide");
-//     tree.insert(Interval::new(3, 5), "narrow");
-//     tree.insert(Interval::new(20, 30), "distant");
+#[test]
+fn interval_query_point() {
+    let mut tree = IntervalTree::new();
+    tree.insert(Interval::new(1, 10), "wide");
+    tree.insert(Interval::new(3, 5), "narrow");
+    tree.insert(Interval::new(20, 30), "distant");
 
-//     let at_4: Vec<_> = tree.query_point(&4).map(|(_, v)| *v).collect();
-//     assert_eq!(at_4.len(), 2);
-//     assert!(at_4.contains(&"wide"));
-//     assert!(at_4.contains(&"narrow"));
+    let at_4: Vec<_> = tree.query_point(&4).map(|(_, v)| *v).collect();
+    assert_eq!(at_4.len(), 2);
+    assert!(at_4.contains(&"wide"));
+    assert!(at_4.contains(&"narrow"));
 
-//     let at_20: Vec<_> = tree.query_point(&20).map(|(_, v)| *v).collect();
-//     assert_eq!(at_20.len(), 1); // only "distant" [20,30] contains 20; "wide" [1,10] does not
-//     assert!(at_20.contains(&"distant"));
-// }
+    let at_20: Vec<_> = tree.query_point(&20).map(|(_, v)| *v).collect();
+    assert_eq!(at_20.len(), 1); // only "distant" [20,30] contains 20; "wide" [1,10] does not
+    assert!(at_20.contains(&"distant"));
+}
 
-// #[test]
-// fn interval_query_point_correct() {
-//     let mut tree = IntervalTree::new();
-//     tree.insert(Interval::new(1, 10), "a");
-//     tree.insert(Interval::new(20, 30), "b");
+#[test]
+fn interval_query_point_correct() {
+    let mut tree = IntervalTree::new();
+    tree.insert(Interval::new(1, 10), "a");
+    tree.insert(Interval::new(20, 30), "b");
 
-//     let at_15: Vec<_> = tree.query_point(&15).collect();
-//     assert_eq!(at_15.len(), 0);
-//     assert!(!tree.any_contains_point(15));
+    let at_15: Vec<_> = tree.query_point(&15).collect();
+    assert_eq!(at_15.len(), 0);
+    assert!(!tree.any_contains_point(15));
 
-//     let at_5_interior: Vec<_> = tree.query_point(&5).collect();
-//     assert_eq!(at_5_interior.len(), 1);
-//     assert!(tree.any_contains_point(5));
-// }
+    let at_5_interior: Vec<_> = tree.query_point(&5).collect();
+    assert_eq!(at_5_interior.len(), 1);
+    assert!(tree.any_contains_point(5));
+}
 
 #[test]
 fn interval_any_overlaps() {
@@ -136,18 +136,18 @@ fn interval_empty_tree() {
     assert!(tree.first_overlap(&0, &100).is_none());
 }
 
-// #[test]
-// fn interval_degenerate_point_intervals() {
-//     let mut tree = IntervalTree::new();
-//     for i in 0..10 {
-//         tree.insert(Interval::new(i, i), i);
-//     }
+#[test]
+fn interval_degenerate_point_intervals() {
+    let mut tree = IntervalTree::new();
+    for i in 0..10 {
+        tree.insert(Interval::new(i, i), i);
+    }
 
-//     // Each integer is a point interval
-//     let point_at_5: Vec<_> = tree.query_point(&5).collect();
-//     assert_eq!(point_at_5.len(), 1);
-//     assert_eq!(*point_at_5[0].1, 5);
-// }
+    // Each integer is a point interval
+    let point_at_5: Vec<_> = tree.query_point(&5).collect();
+    assert_eq!(point_at_5.len(), 1);
+    assert_eq!(*point_at_5[0].1, 5);
+}
 
 #[test]
 fn interval_large_fuzz() {

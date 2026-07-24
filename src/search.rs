@@ -171,7 +171,7 @@ where
     /// // 2. Spin up an InOrderIter from that cursor position with a custom policy
     /// let custom_iterator = InOrderIter::from_cursor(cursor, MyCustomPolicy);
     /// ```
-    pub fn from_cursor<'a>(cursor: NavCursor<'a, K, V, S>, policy: P) -> Self {
+    pub fn from_cursor(cursor: &NavCursor<'_, K, V, S>, policy: P) -> Self {
         // Safe bridge: Unpack the internal Option<NodeRef> from the public cursor
         let starting_node = cursor.current;
 
