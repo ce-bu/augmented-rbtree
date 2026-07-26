@@ -5,6 +5,10 @@
 #![cfg_attr(feature = "nightly", feature(allocator_api))]
 
 mod helpers;
+use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeSeed, Global, SubtreeSize};
+use rand::RngExt;
+use serde::de::DeserializeSeed;
+
 use crate::helpers::{
     Result,
     common::{
@@ -12,9 +16,6 @@ use crate::helpers::{
         test_rng,
     },
 };
-use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeSeed, Global, SubtreeSize};
-use rand::RngExt;
-use serde::de::DeserializeSeed;
 
 #[test]
 fn serde_test_same_tree() -> Result<()> {

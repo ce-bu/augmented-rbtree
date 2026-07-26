@@ -1,8 +1,9 @@
 //! This example demonstrates how to visualize an augmented red-black tree using the `augmented-rbtree` crate.
 //! It generates an SVG representation of the tree structure, which can be useful for debugging and understanding the tree's layout.
 
-use crate::visual::dump_tree_to_svg;
 use augmented_rbtree::interval_tree::IntervalTree;
+
+use crate::visual::dump_tree_to_svg;
 
 #[path = "../tests/shared/visual.rs"]
 mod visual;

@@ -33,9 +33,10 @@ fn main() {
 
     // Mutable iteration
     println!("\n=== Mutable iteration (iter_mut) ===");
-    for (k, mut v, _s) in &mut tree {
-        println!("Modifying value at key {k}");
-        v.push_str(" (modified)");
+    for mut node in &mut tree {
+        println!("Modifying value at key {}", node.key());
+
+        node.value_mut().push_str(" (modified)");
     }
 
     println!("\n=== After modification ===");

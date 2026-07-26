@@ -1,7 +1,6 @@
+use std::{fmt::Write, fs::File, path::Path};
+
 use augmented_rbtree::{Allocator, AugmentedRBTree, Color};
-use std::fmt::Write;
-use std::fs::File;
-use std::path::Path;
 
 pub(crate) fn dump_tree_to_svg<K, V, G, S, A: Allocator, P: AsRef<Path>>(
     tree: &AugmentedRBTree<K, V, G, A>,

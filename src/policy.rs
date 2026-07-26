@@ -1,7 +1,6 @@
 pub mod internal_details {
-    use crate::alloc_proxy::proxy::Allocator;
-    use crate::node::internal_details::NodeRef;
-    use crate::{Augment, Unit};
+
+    use crate::{Augment, Unit, alloc_proxy::proxy::Allocator, node::internal_details::NodeRef};
 
     /// A policy that defines how to compute and maintain augmented statistics for a Red-Black Tree.
     pub trait TreePolicy {
@@ -75,14 +74,17 @@ pub mod internal_details {
             unsafe {
                 let raw_node = node.ptr.as_ptr();
 
-                let left_args = if let Some(l) = (*raw_node).left {
+                let left_ptr = (*raw_node).left;
+                let right_ptr = (*raw_node).right;
+
+                let left_args = if let Some(l) = left_ptr {
                     let l_ptr = l.as_ptr();
                     Some((&(*l_ptr).key, &(*l_ptr).value, &(*l_ptr).stats))
                 } else {
                     None
                 };
 
-                let right_args = if let Some(r) = (*raw_node).right {
+                let right_args = if let Some(r) = right_ptr {
                     let r_ptr = r.as_ptr();
                     Some((&(*r_ptr).key, &(*r_ptr).value, &(*r_ptr).stats))
                 } else {

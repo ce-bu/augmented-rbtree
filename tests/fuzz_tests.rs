@@ -3,10 +3,10 @@
 
 mod helpers;
 
-use crate::helpers::common::test_rng;
 use augmented_rbtree::{AugmentedRBTree, SubtreeSize};
-use rand::RngExt;
-use rand::seq::SliceRandom;
+use rand::{RngExt, seq::SliceRandom};
+
+use crate::helpers::common::test_rng;
 
 #[test]
 fn fuzz_insert_delete_small() {

@@ -5,9 +5,9 @@ mod helpers;
 
 use std::iter::repeat_with;
 
-use augmented_rbtree::{AugmentedRBTree, SubtreeSize};
+use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, SubtreeSize, SumAugmentation};
 use itertools::Itertools;
-use rand::RngExt;
+use rand::{RngExt, seq::SliceRandom};
 
 use crate::helpers::common::test_rng;
 
@@ -53,22 +53,58 @@ fn check_iter_mut() {
         tree.insert(key, key);
     }
 
-    for (key, mut value, _stats) in &mut tree {
-        assert!(keys.contains(key));
-        *value += 1000; // Modify the value mutably
+    for mut guard in &mut tree {
+        assert!(keys.contains(guard.key()));
+        *guard.value_mut() += 1000; // Modify the value mutably
     }
 
-    for (key, mut value, _stats) in tree.iter_mut().rev() {
-        assert!(keys.contains(key));
+    for mut value in tree.values_mut().rev() {
         assert!(*value > 1000);
         *value -= 1000;
     }
 
-    assert_eq!(tree.iter_mut().len(), keys.len());
+    assert_eq!(tree.values_mut().len(), keys.len());
 
     for &key in &keys {
         assert_eq!(tree.get(&key), Some(&key));
     }
+}
+
+#[test]
+fn check_iter_mut_no_change() {
+    let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
+
+    tree.insert(10, 10);
+    tree.insert(20, 20);
+
+    let keys_copied: Vec<i32> = tree
+        .iter_mut()
+        .map(|guard| *guard.key() + *guard.value())
+        .collect();
+
+    assert_eq!(keys_copied, vec![20, 40]);
+}
+
+#[test]
+fn check_iter_mut_change_value() {
+    let mut tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
+
+    tree.insert(10, "A".to_string());
+    tree.insert(20, "B".to_string());
+
+    let _keys: Vec<i32> = tree
+        .iter_mut()
+        .map(|mut guard| {
+            let key = *guard.key();
+            let value = guard.as_mut();
+            let new_value = format!("{}-{}", *value, key);
+            *value = new_value;
+            key
+        })
+        .collect();
+
+    let values = tree.iter().map(|(_, value, _stats)| value).collect_vec();
+    assert_eq!(values, vec!["A-10", "B-20"]);
 }
 
 #[test]
@@ -88,10 +124,6 @@ fn check_iter_mut_collect() {
     assert_eq!(arr.len(), keys.len());
 }
 
-fn change_mut_node_value<V: AsMut<i32>>(mut val: V) {
-    *val.as_mut() += 1;
-}
-
 #[test]
 fn check_valmut_explicit_reborrow() {
     let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
@@ -99,15 +131,14 @@ fn check_valmut_explicit_reborrow() {
     for &key in &keys {
         tree.insert(key, key);
     }
-    for (_key, mut val, _stats) in &mut tree {
-        change_mut_node_value(&mut val);
-        *val += 1;
+    for mut guard in &mut tree {
+        //        change_mut_node_value(&mut guard);
+        *guard.value_mut() += 2;
     }
     for &key in &keys {
         assert_eq!(tree.get(&key).copied(), Some(key + 2));
     }
 }
-
 #[test]
 fn check_back_field_isolated() {
     let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
@@ -118,12 +149,12 @@ fn check_back_field_isolated() {
 
     assert_eq!(iter.len(), 2);
 
-    let (key_back, _, _) = iter.next_back().unwrap();
-    assert_eq!(*key_back, 20);
+    let node_guard = iter.next_back().unwrap();
+    assert_eq!(*node_guard.key(), 20);
     assert_eq!(iter.len(), 1);
 
-    let (key_front, _, _) = iter.next().unwrap();
-    assert_eq!(*key_front, 10);
+    let node_guard = iter.next().unwrap();
+    assert_eq!(*node_guard.key(), 10);
     assert_eq!(iter.len(), 0);
 
     assert!(iter.next_back().is_none());
@@ -320,21 +351,21 @@ mod range_tests {
             let mut range_mut = tree.range_mut(15..=25);
 
             // Mutate via forward iteration
-            if let Some((key, mut val, _stats)) = range_mut.next() {
-                assert_eq!(key, &15);
-                val.push_str("_mut1");
+            if let Some(mut node_guard) = range_mut.next() {
+                assert_eq!(node_guard.key(), &15);
+                node_guard.value_mut().push_str("_mut1");
             }
 
             // Mutate via backward iteration to verify next_back for RangeMut
-            if let Some((key, mut val, _stats)) = range_mut.next_back() {
-                assert_eq!(key, &25);
-                val.push_str("_mut2");
+            if let Some(mut node_guard) = range_mut.next_back() {
+                assert_eq!(node_guard.key(), &25);
+                node_guard.value_mut().push_str("_mut2");
             }
 
             // Meet at node 20
-            if let Some((key, mut val, _stats)) = range_mut.next() {
-                assert_eq!(key, &20);
-                val.push_str("_mut3");
+            if let Some(mut node_guard) = range_mut.next() {
+                assert_eq!(node_guard.key(), &20);
+                node_guard.value_mut().push_str("_mut3");
             }
 
             // Ensure Fused/Exhausted branch triggers on RangeMut
@@ -639,4 +670,59 @@ fn test_stats_iterator_all_traits() {
     assert!(stats_iter.next().is_none());
     assert!(stats_iter.next_back().is_none());
     assert!(stats_iter.next().is_none());
+}
+
+#[test]
+fn check_node_guard_deref_mut() {
+    let mut tree = AugmentedRBTree::<i32, i32, SumAugmentation>::new();
+    let mut keys = (1..=100).collect::<Vec<i32>>();
+    let mut rng = test_rng();
+    keys.shuffle(&mut rng);
+
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+
+    assert_eq!(tree.root_stats(), Some(&5050));
+
+    for mut guard in &mut tree {
+        // Use deref_mut to modify the value directly
+        *guard *= 2;
+    }
+
+    assert_eq!(tree.root_stats(), Some(&(5050 * 2)));
+    assert!(tree.iter().all(|(key, value, _)| *value == *key * 2));
+}
+
+#[test]
+fn check_node_guard_deref() {
+    let mut tree = AugmentedRBTree::<i32, i32, SumAugmentation>::new();
+    let mut keys = (1..=100).collect::<Vec<i32>>();
+    let mut rng = test_rng();
+    keys.shuffle(&mut rng);
+
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+
+    assert!(tree.iter_mut().all(|node_guard| {
+        let key = *node_guard.key();
+        let value = *node_guard;
+        value == key
+    }));
+}
+
+#[test]
+fn check_node_guard_stats() {
+    let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
+    let mut keys = (1..=100).collect::<Vec<i32>>();
+    let mut rng = test_rng();
+    keys.shuffle(&mut rng);
+
+    for &key in &keys {
+        tree.insert(key, key);
+    }
+
+    let max_count = tree.iter_mut().map(|node_guard| *node_guard.stats()).max();
+    assert_eq!(max_count, Some(100));
 }

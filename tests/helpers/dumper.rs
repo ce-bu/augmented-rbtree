@@ -1,8 +1,9 @@
 #[path = "../shared/visual.rs"]
 mod visual;
 
-use augmented_rbtree::{Allocator, AugmentedRBTree};
 use std::path::PathBuf;
+
+use augmented_rbtree::{Allocator, AugmentedRBTree};
 
 fn get_test_svg_path(suffix: Option<&str>) -> PathBuf {
     let thread = std::thread::current();

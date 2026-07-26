@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "rbtree_tests" "serde_tests" "topology_tests")
+readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "cursor_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "rbtree_tests" "search_tests" "serde_tests" "topology_tests")
 readonly extra_tests=("fuzz_tests" "stress_tests" "property_tests")
 
 
@@ -162,21 +162,29 @@ exec_test()
 }
 run_ci()
 {
+    echo "==> Clippy"
     cargo clippy --no-default-features --features "alloc,interval-tree,serde" -- -D warnings
     cargo clippy --no-default-features --features allocator-api,interval-tree,serde -- -D warnings
 
+    echo "==> Rustfmt"
     RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --no-default-features --features "nightly,interval-tree,serde"
     
+    echo "==> Running tests"
     exec_test cargo test --no-default-features --features "alloc,interval-tree,serde" --release --tests 
     exec_test cargo test --no-default-features --features "allocator-api,interval-tree,serde" --release --tests 
     exec_test cargo test --no-default-features --release --tests 
 
+    echo "==> Running tests with nightly features"
     exec_test cargo +nightly test --no-default-features --features "nightly,interval-tree,serde" --release  --tests
     exec_test cargo +nightly test --no-default-features --features "alloc,nightly,interval-tree,serde" --release --tests 
+    
+    echo "==> Running tests not using default features"
     exec_test cargo test --no-default-features --release --tests
 
+    echo "==> Running tests thumbv7m-none-eabi target"
     cargo check --target thumbv7m-none-eabi --no-default-features --features "interval-tree"
 
+    echo "==> Running doctests"
     cargo  test --doc --no-default-features --features "alloc,interval-tree,serde"
     cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde"
 }
@@ -184,7 +192,7 @@ run_ci()
 run_doctest()
 {
     cargo  test --doc --no-default-features --features "alloc,interval-tree,serde"
-    cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde"
+    cargo +nightly test --doc --no-default-features --features "nightly,interval-tree,serde,experimental"
 }
 
 run_opendoc()

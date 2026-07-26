@@ -38,11 +38,13 @@ jobs:
             --test allocator_tests \
             --test augmentations_tests \
             --test basic_tests \
+            --test cursor_tests \
             --test drop_tests \
             --test entry_tests \
             --test interval_tree_tests \
             --test iterators_tests \
             --test rbtree_tests \
+            --test search_tests \
             --test serde_tests \
             --test topology_tests
 

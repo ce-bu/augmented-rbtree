@@ -3,8 +3,9 @@
 
 mod helpers;
 
-use crate::helpers::limited_allocator::LimitedAllocator;
 use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, Unit};
+
+use crate::helpers::limited_allocator::LimitedAllocator;
 
 #[test]
 fn test_limited_allocator() {

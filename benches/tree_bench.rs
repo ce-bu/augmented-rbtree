@@ -1,6 +1,7 @@
+use std::{collections::BTreeMap, hint::black_box};
+
 use augmented_rbtree::{AugmentedRBTree, Unit, augmentations::SubtreeSize};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use std::{collections::BTreeMap, hint::black_box};
 
 const SIZES: &[i64] = &[100, 1_000, 10_000];
 

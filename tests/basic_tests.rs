@@ -2,13 +2,15 @@
 #![cfg_attr(feature = "nightly", feature(allocator_api))]
 
 mod helpers;
-use crate::helpers::common::test_rng;
+use std::iter::repeat_with;
+
 use augmented_rbtree::{
     AugmentedRBTree, AugmentedRBTreeFactory, MinAugmentation, SubtreeSize, Unit, constant_augment,
 };
 use itertools::Itertools;
 use rand::RngExt;
-use std::iter::repeat_with;
+
+use crate::helpers::common::test_rng;
 
 #[test]
 fn check_empty_tree() {
@@ -216,8 +218,10 @@ fn check_clear() {
     for &key in &keys {
         tree.insert(key, key);
     }
+    assert_eq!(tree.len(), 500);
     tree.clear();
     assert!(tree.is_empty());
+    assert_eq!(tree.len(), 0);
     assert!(tree.verify_augmentation());
     assert!(tree.verify_properties());
 }
@@ -473,4 +477,26 @@ fn test_create_tree_with_factory() {
     assert_eq!(tree.get(&1), Some(&10));
     assert_eq!(tree.get(&2), Some(&20));
     assert_eq!(tree.get(&3), Some(&30));
+}
+
+#[test]
+fn test_tree_from_iter() {
+    let tree =
+        AugmentedRBTree::<i32, i32, SubtreeSize>::from_iter(vec![(10, 100), (20, 200), (30, 300)]);
+
+    assert_eq!(tree.get(&10), Some(&100));
+    assert_eq!(tree.get(&20), Some(&200));
+    assert_eq!(tree.get(&30), Some(&300));
+    assert_eq!(tree.root_stats(), Some(&3));
+}
+
+#[test]
+fn test_tree_extends_from_iter() {
+    let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
+    tree.extend(vec![(10, 100), (20, 200), (30, 300)]);
+
+    assert_eq!(tree.get(&10), Some(&100));
+    assert_eq!(tree.get(&20), Some(&200));
+    assert_eq!(tree.get(&30), Some(&300));
+    assert_eq!(tree.root_stats(), Some(&3));
 }

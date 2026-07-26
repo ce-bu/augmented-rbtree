@@ -19,6 +19,8 @@ Build interval trees, order-statistics trees, and other indexed tree structures 
 - Red-Black tree fallback without augmentation for standard key-value storage has no augmentation calculation overhead.
 - Ordered-map API parity with `BTreeMap`, including range queries, iterators, and `Entry` mechanics.
 - Core `no_std` compatibility supporting distinct stack-only and custom allocator profiles.
+- Tree navigation cursors allows custom traversal strategies.
+- `InOrder` traversal iterator with customizable pruning and filtering of subtrees.
 - Native topology extraction utilities to generate Graphviz layout files for visual debugging.
 - Built-in, conditional compilation flags for an optimized `IntervalTree` and `serde` support.
 - Extensive test coverage verified through local integration test matrices and example recipes.
@@ -34,7 +36,7 @@ Default configuration uses `alloc`:
 
 ```toml
 [dependencies]
-augmented-rbtree = "0.2"
+augmented-rbtree = "0.3"
 ```
 
 ## Quick start
@@ -95,7 +97,7 @@ Common use cases: order-statistics trees, interval trees, range-sum trees, and r
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.2", features = ["interval-tree"] }
+augmented-rbtree = { version = "0.3", features = ["interval-tree"] }
 ```
 
 ```rust

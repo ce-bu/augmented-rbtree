@@ -2,13 +2,14 @@
 //!
 //! This mirrors the `Entry` API found in [`alloc::collections::BTreeMap`].
 
-use crate::alloc_proxy::proxy::{Allocator, Layout, handle_alloc_error};
-use crate::policy::internal_details::TreePolicy;
+use core::ptr::NonNull;
+
 use crate::{
+    alloc_proxy::proxy::{Allocator, Layout, handle_alloc_error},
     augmented_rbtree::{OutOfMemoryError, internal_details::AugmentedRBTreeInt},
     node::Node,
+    policy::internal_details::TreePolicy,
 };
-use core::ptr::NonNull;
 
 /// A view into a single entry in a tree, which may either be vacant or occupied.
 ///
@@ -249,7 +250,6 @@ where
     {
         // We own the key — insert it, then retrieve a pointer to the newly inserted node.
         let node = self.tree.layout.try_insert_node_get_ref(self.key, value)?;
-        self.tree.len += 1;
         Ok(unsafe { &mut (*node.ptr.as_ptr()).value })
     }
 

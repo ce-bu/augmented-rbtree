@@ -4,10 +4,11 @@
 mod helpers;
 use std::iter::repeat_with;
 
-use crate::helpers::common::test_rng;
 use augmented_rbtree::RBTree;
 use itertools::Itertools;
 use rand::RngExt;
+
+use crate::helpers::common::test_rng;
 
 #[test]
 fn test_simple_rbtree() {

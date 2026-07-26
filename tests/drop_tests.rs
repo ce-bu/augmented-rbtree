@@ -3,15 +3,19 @@
 
 mod helpers;
 
-use crate::helpers::common::custom_augment_a::{
-    CustomAugment, CustomKey, CustomValue, DROP_CUSTOM_KEY_LOGGER, DROP_CUSTOM_STATS_LOGGER,
-    DROP_CUSTOM_VALUE_LOGGER, reset_drop_loggers,
-};
-use crate::helpers::common::test_rng;
+use std::iter::repeat_with;
+
 use augmented_rbtree::AugmentedRBTree;
 use itertools::Itertools;
 use rand::RngExt;
-use std::iter::repeat_with;
+
+use crate::helpers::common::{
+    custom_augment_a::{
+        CustomAugment, CustomKey, CustomValue, DROP_CUSTOM_KEY_LOGGER, DROP_CUSTOM_STATS_LOGGER,
+        DROP_CUSTOM_VALUE_LOGGER, reset_drop_loggers,
+    },
+    test_rng,
+};
 
 #[test]
 fn check_keys_values_stats_are_droped() {
@@ -45,6 +49,12 @@ fn check_keys_values_stats_are_droped() {
     orig_values.sort();
     assert_eq!(dropped_values, orig_values);
     let dropped_stats_len = DROP_CUSTOM_STATS_LOGGER.with_borrow(std::vec::Vec::len);
+
+    println!(
+        "dropped_stats_len: {} dropped_keys_len: {}",
+        dropped_stats_len,
+        dropped_keys.len()
+    );
     assert!(dropped_stats_len > dropped_keys.len());
 }
 

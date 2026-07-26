@@ -1,19 +1,24 @@
-use crate::augmented_rbtree::OutOfMemoryError;
-use crate::iterators::RangeBoundsLimits;
-use crate::node::internal_details::NodeRef;
-use crate::node_allocator::NodeAllocator;
-use crate::policy::internal_details::TreePolicy;
-use crate::{alloc_proxy::proxy::Allocator, node::Color};
 use core::{borrow::Borrow, cmp, marker::PhantomData};
+
+use crate::{
+    alloc_proxy::proxy::{Allocator, Layout},
+    augmented_rbtree::OutOfMemoryError,
+    iterators::RangeBoundsLimits,
+    node::{Color, Node, internal_details::NodeRef},
+    node_allocator::NodeAllocator,
+    policy::internal_details::TreePolicy,
+};
 
 /// A layout for an augmented Red-Black Tree that supports augmentation through the `Augment` trait.
 #[derive(Debug)]
 pub(crate) struct AugmentedRBTreeLayout<K, V, S, A, P>
 where
     P: TreePolicy<K = K, V = V, S = S>,
+    A: Allocator,
 {
     pub(crate) root: Option<NodeRef<K, V, S>>,
     pub(crate) node_allocator: NodeAllocator<A>,
+    pub(crate) len: usize,
     pub(crate) _marker: PhantomData<(K, V, S, fn() -> P)>,
 }
 
@@ -37,6 +42,8 @@ where
 {
 }
 
+type CloneNodeRefResult<K, V, S> = Result<Option<NodeRef<K, V, S>>, OutOfMemoryError>;
+
 impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     AugmentedRBTreeLayout<K, V, S, A, P>
 {
@@ -46,8 +53,120 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         Self {
             root: None,
             node_allocator: NodeAllocator::new(alloc),
+            len: 0,
             _marker: PhantomData,
         }
+    }
+    pub fn clear(&mut self) {
+        if let Some(root) = self.root.take() {
+            unsafe { free_subtree(root, &self.node_allocator.alloc) };
+        }
+        self.len = 0;
+    }
+
+    pub(crate) fn try_clone(&self) -> CloneNodeRefResult<K, V, S>
+    where
+        K: Clone,
+        V: Clone,
+        A: Allocator,
+        P: TreePolicy<K = K, V = V, S = S>,
+    {
+        let mut current = self.root;
+        let mut prev = None;
+
+        let mut clone_root: Option<NodeRef<K, V, S>> = None;
+        let mut current_clone: Option<NodeRef<K, V, S>> = None;
+
+        while let Some(current_ref) = current {
+            if prev == current_ref.parent() {
+                // comming down from parent needs to create a clone of the current node and link it to its parent clone
+
+                let key = unsafe { current_ref.key().clone() };
+                let value = unsafe { current_ref.value().clone() };
+
+                let new_node = match self.node_allocator.alloc_node(
+                    key.clone(),
+                    value.clone(),
+                    P::compute(&key, &value, None, None),
+                ) {
+                    Ok(node) => node,
+                    Err(err) => {
+                        // Cleanup already allocated partial tree
+                        if let Some(root) = clone_root {
+                            unsafe {
+                                free_subtree(root, &self.node_allocator.alloc);
+                            }
+                        }
+                        // key and value are still completely valid here!
+                        return Err(err);
+                    }
+                };
+                new_node.set_color(current_ref.color());
+
+                // If the current_clone exists, we need to link the new_node to it as a child.
+                // Otherwise, this new_node is the root of the cloned tree.
+                if let Some(parent_clone) = current_clone {
+                    new_node.set_parent(Some(parent_clone));
+
+                    // check if we need to insert the new_node as a left or right child of the parent_clone
+                    let original_parent = current_ref.parent();
+                    if original_parent.and_then(NodeRef::left) == Some(current_ref) {
+                        parent_clone.set_left(Some(new_node));
+                    } else {
+                        parent_clone.set_right(Some(new_node));
+                    }
+                } else {
+                    clone_root = Some(new_node);
+                }
+
+                // Move our clone pointer down to this new node
+                current_clone = Some(new_node);
+
+                let left = current_ref.left();
+                if let Some(left_ref) = left {
+                    // navigate down to the left child
+                    prev = Some(current_ref);
+                    current = Some(left_ref);
+                } else if let Some(right_ref) = current_ref.right() {
+                    // left child does not exist, but right child does, navigate to the right child
+                    prev = Some(current_ref);
+                    current = Some(right_ref);
+                } else {
+                    // both children do not exist, we need to go up and repair augmentation data for the cloned node.
+                    if let Some(clone_node) = current_clone {
+                        P::augment(clone_node);
+                    }
+                    prev = Some(current_ref);
+                    current = current_ref.parent();
+                    current_clone = current_clone.and_then(NodeRef::parent);
+                }
+            } else if prev == current_ref.left() {
+                // comming up from left child
+                if let Some(right_ref) = current_ref.right() {
+                    // try to visit right child
+                    prev = Some(current_ref);
+                    current = Some(right_ref);
+                } else {
+                    // nothing to be done we need to go up and repair augmentation data for the cloned node.
+                    if let Some(clone_node) = current_clone {
+                        P::augment(clone_node);
+                    }
+                    prev = Some(current_ref);
+                    current = current_ref.parent();
+                    current_clone = current_clone.and_then(NodeRef::parent);
+                }
+            } else if prev == current_ref.right() {
+                // comming up from right child, we need to go up and repair augmentation data for the cloned node.
+                if let Some(clone_node) = current_clone {
+                    P::augment(clone_node);
+                }
+                prev = Some(current_ref);
+                current = current_ref.parent();
+                current_clone = current_clone.and_then(NodeRef::parent);
+            }
+        }
+
+        Ok(clone_root)
     }
 
     /// Inserts a key-value pair into the tree. If the key already exists, its value is updated and the old value is returned.
@@ -61,6 +180,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
+            self.len = 1;
             return Ok(None);
         };
 
@@ -105,6 +225,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         P::augment_upstream(parent);
         self.insert_fixup(new_node);
 
+        self.len += 1;
+
         Ok(None)
     }
 
@@ -123,6 +245,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             let new_node = self.node_allocator.alloc_node(key, value, stats)?;
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
+            self.len = 1;
             return Ok(new_node);
         };
 
@@ -163,6 +286,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         P::augment(parent);
         P::augment_upstream(parent);
         self.insert_fixup(new_node);
+
+        self.len += 1;
         Ok(new_node)
     }
 
@@ -861,6 +986,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         let (key, value, _) = unsafe { self.node_allocator.dealloc_node(original_node) };
+
+        self.len -= 1;
+
         (key, value)
     }
 
@@ -1170,6 +1298,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         let (key, value, _) = unsafe { self.node_allocator.dealloc_node(z) };
+        self.len -= 1;
         (key, value)
     }
 
@@ -1295,7 +1424,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>, Q: Ord + ?Sized>
 where
     K: Borrow<Q> + Ord,
 {
-    /// Finds the first node whose key is greater than or equal to `key` (lower bound).
+    /// Finds the smallest x s.t. x >= key (lower bound).
     fn lower_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
         let mut current = self.root;
         let mut result = None;
@@ -1303,6 +1432,7 @@ where
             let node_key = unsafe { node.key() };
             match key.cmp(node_key.borrow()) {
                 core::cmp::Ordering::Less => {
+                    // x > key, so this node is a candidate for lower bound, but we need to look in the left subtree for a smaller candidate
                     result = Some(node);
                     current = node.left();
                 }
@@ -1310,6 +1440,7 @@ where
                     return Some(node);
                 }
                 core::cmp::Ordering::Greater => {
+                    // x < key, so we need to look in the right subtree for a larger candidate
                     current = node.right();
                 }
             }
@@ -1317,26 +1448,58 @@ where
         result
     }
 
-    /// Finds the last node whose key is less than or equal to `key` (upper bound).
-    fn upper_bound(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
+    /// Find the largest node x s.t. x <= key (floor) node.
+    fn floor(&self, key: &Q) -> Option<NodeRef<K, V, S>> {
         let mut current = self.root;
         let mut result = None;
         while let Some(node) = current {
             let node_key = unsafe { node.key() };
             match key.cmp(node_key.borrow()) {
                 core::cmp::Ordering::Less => {
+                    // x > key, so we need to look in the left subtree for a smaller candidate
                     current = node.left();
                 }
                 core::cmp::Ordering::Equal => {
                     return Some(node);
                 }
                 core::cmp::Ordering::Greater => {
+                    //  x < key, so this node is a candidate for floor, but we need to look in the right subtree for a larger candidate
                     result = Some(node);
                     current = node.right();
                 }
             }
         }
         result
+    }
+
+    /// Finds the smallest x s.t. x > key (strict lower bound).
+    fn lower_bound_excluded(&self, key: &Q) -> Option<NodeRef<K, V, S>>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.lower_bound(key).and_then(|n| {
+            if unsafe { n.key() }.borrow() == key {
+                n.next_node()
+            } else {
+                Some(n)
+            }
+        })
+    }
+
+    /// Find the largest node x s.t x < key (strict floor) node,
+    fn floor_excluded(&self, key: &Q) -> Option<NodeRef<K, V, S>>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
+        self.floor(key).and_then(|n| {
+            if unsafe { n.key() }.borrow() == key {
+                n.prev_node()
+            } else {
+                Some(n)
+            }
+        })
     }
 
     fn leftmost(&self) -> Option<NodeRef<K, V, S>> {
@@ -1346,4 +1509,127 @@ where
     fn rightmost(&self) -> Option<NodeRef<K, V, S>> {
         self.root.map(NodeRef::rightmost)
     }
+}
+
+/// To avoid recursion we use the parent pointer to store the pointer to the next node in the list.
+/// When you see the next pointer being used that is the parent pointer field.
+/// The algorithm uses two pointers.
+/// - `current` pointer is the node we are currently processing
+/// - `unlinked` pointer is the node that does ot yes have a next link (see below why).
+///
+///   Algorithm processds as follows:
+/// 1. Set the unlinked and current to the subtree root node we have to delete.
+///    Note that unlinked.next is None because we did not explore anything yet.
+/// 2. If the current node has a left child and right child:
+///    left.next = left
+///    right.next = None
+///    unlinked.next = right
+///    unlinked = right
+/// 3. If the current node has a left child and no right child:
+///    unlinked.next = left
+///    left.next = None
+/// 4. If the current node has a right child and no left child:
+///    unlinked.next = right
+///    right.next = None
+/// 5. tmp = current
+///    current = current.next
+///    free(tmp)
+///    if current is None we are done, otherwise go to step 2.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences raw pointers and assumes that the provided node pointer is valid and points to a properly constructed subtree of the red-black tree. The caller must ensure that the
+pub(crate) unsafe fn free_subtree<K, V, S, A>(node: NodeRef<K, V, S>, alloc: &A)
+where
+    A: Allocator,
+{
+    let mut current = Some(node.ptr);
+    let mut unlinked = node.ptr;
+
+    unsafe {
+        while let Some(current_node) = current {
+            if let Some(left) = (*current_node.as_ptr()).left {
+                if let Some(right) = (*current_node.as_ptr()).right {
+                    (*left.as_ptr()).parent = Some(right);
+                    (*right.as_ptr()).parent = None;
+                    (*unlinked.as_ptr()).parent = Some(left);
+                    unlinked = right;
+                } else {
+                    (*left.as_ptr()).parent = None;
+                    (*unlinked.as_ptr()).parent = Some(left);
+                    unlinked = left;
+                }
+            } else if let Some(right) = (*current_node.as_ptr()).right {
+                (*right.as_ptr()).parent = None;
+                (*unlinked.as_ptr()).parent = Some(right);
+                unlinked = right;
+            }
+            let tmp = current_node;
+            current = (*current_node.as_ptr()).parent;
+            core::ptr::drop_in_place(tmp.as_ptr());
+            alloc.deallocate(tmp.cast(), Layout::new::<Node<K, V, S>>());
+        }
+    }
+}
+
+#[cfg(not(feature = "experimental"))]
+impl<K, V, S, A, P> Drop for AugmentedRBTreeLayout<K, V, S, A, P>
+where
+    P: TreePolicy<K = K, V = V, S = S>,
+    A: Allocator,
+{
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+#[cfg(feature = "experimental")]
+unsafe impl<#[may_dangle] K, #[may_dangle] V, #[may_dangle] S, #[may_dangle] A, P> Drop
+    for AugmentedRBTreeLayout<K, V, S, A, P>
+where
+    P: TreePolicy<K = K, V = V, S = S>,
+    A: Allocator,
+{
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+#[cfg(all(any(test, doctest), feature = "experimental"))]
+mod tests {
+    use core::fmt::Debug;
+
+    use super::*;
+    use crate::{AugmentedRBTreeFactory, SubtreeSize};
+
+    struct Inspector<T: Debug>(T);
+
+    impl<T> Drop for Inspector<T>
+    where
+        T: Debug,
+    {
+        fn drop(&mut self) {}
+    }
+
+    /// This documentation block forces Cargo to run a compile-fail test.
+    ///
+    /// ```compile_fail
+    /// // 1. Bring dependencies into the isolated doc-test scope
+    /// use augmented_rbtree::{AugmentedRBTreeFactory, SubtreeSize};
+    /// use core::fmt::Debug;
+    ///
+    /// struct Inspector<T: Debug>(T);
+    /// impl<T: Debug> Drop for Inspector<T> {
+    ///     fn drop(&mut self) {}
+    /// }
+    ///
+    /// // 2. The code that must fail compilation
+    /// let mut z = 42;
+    /// let mut tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
+    /// tree.insert(1, Inspector(&mut z));
+    ///
+    /// // This usage triggers a borrow checker error (E0502) because `z` is still borrowed by `tree`
+    /// let _use_z = z;
+    /// ```
+    fn compile_fail_borrow_check_anchor() {}
 }

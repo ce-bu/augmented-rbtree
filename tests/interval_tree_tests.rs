@@ -1,8 +1,10 @@
 #![cfg(feature = "interval-tree")]
 #![cfg_attr(feature = "nightly", feature(allocator_api))]
 
-use augmented_rbtree::Global;
-use augmented_rbtree::interval_tree::{Interval, IntervalTree};
+use augmented_rbtree::{
+    Global,
+    interval_tree::{Interval, IntervalTree},
+};
 
 #[test]
 fn interval_basic_insert_query() {

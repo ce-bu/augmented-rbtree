@@ -1,8 +1,9 @@
 use core::ptr::NonNull;
 
 use crate::{
-    alloc_proxy::proxy::Allocator, alloc_proxy::proxy::Layout, augmented_rbtree::OutOfMemoryError,
-    node::Color, node::Node, node::internal_details::NodeRef,
+    alloc_proxy::proxy::{Allocator, Layout},
+    augmented_rbtree::OutOfMemoryError,
+    node::{Color, Node, internal_details::NodeRef},
 };
 #[derive(Debug, Clone)]
 pub(crate) struct NodeAllocator<A> {
@@ -40,6 +41,7 @@ impl<A: Allocator> NodeAllocator<A> {
                 left: None,
                 right: None,
                 parent: None,
+                _marker: core::marker::PhantomData,
             });
 
             Ok(NodeRef::from_raw(NonNull::new_unchecked(raw_ptr)))

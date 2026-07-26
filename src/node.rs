@@ -16,6 +16,7 @@ pub(crate) enum NilSide {
     Right,
 }
 
+#[derive(Clone)]
 pub(crate) struct Node<K, V, S> {
     pub(crate) left: Option<NonNull<Node<K, V, S>>>,
     pub(crate) right: Option<NonNull<Node<K, V, S>>>,
@@ -24,11 +25,13 @@ pub(crate) struct Node<K, V, S> {
     pub(crate) value: V,
     pub(crate) stats: S,
     pub(crate) color: Color,
+    pub(crate) _marker: core::marker::PhantomData<(K, V, S)>,
 }
 
 pub mod internal_details {
-    use crate::{Color, node::Node};
     use core::ptr::NonNull;
+
+    use crate::{Color, node::Node};
 
     #[derive(Debug)]
     pub struct NodeRef<K, V, S> {

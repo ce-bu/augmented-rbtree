@@ -1,12 +1,14 @@
-use crate::{
-    Augment, AugmentedRBTree,
-    alloc_proxy::proxy::{Allocator, Global},
-};
 use core::marker::PhantomData;
+
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{DeserializeSeed, SeqAccess},
     ser::SerializeSeq,
+};
+
+use crate::{
+    Augment, AugmentedRBTree,
+    alloc_proxy::proxy::{Allocator, Global},
 };
 
 /// A deserialization seed that carries a custom allocator instance

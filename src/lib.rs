@@ -101,6 +101,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
+#![cfg_attr(feature = "experimental", feature(dropck_eyepatch))]
 
 // If both are enabled, prioritize nightly and throw a helpful compiler warning
 #[cfg(all(feature = "nightly", feature = "allocator-api", not(doc)))]
@@ -115,13 +116,15 @@ compile_error!(
     feature = "nightly",
     test
 ))]
+#[allow(unused_extern_crates)]
 extern crate alloc;
 
 mod alloc_proxy;
 mod augment;
 pub mod augmentations;
 mod augmented_rbtree;
-pub mod entry;
+mod cursor;
+mod entry;
 #[cfg(feature = "interval-tree")]
 pub mod interval_tree;
 mod iterators;
@@ -129,23 +132,27 @@ mod layout;
 mod node;
 mod node_allocator;
 mod policy;
+mod search;
 
 #[cfg(feature = "serde")]
 mod serde_impl;
 
 #[cfg(any(feature = "nightly", feature = "allocator-api", feature = "alloc"))]
 pub use alloc_proxy::proxy::{AllocError, Allocator, Global, Layout};
-
 pub use augment::Augment;
-pub use augmentations::{IntervalMaxEnd, MinAugmentation, SubtreeSize, Unit};
+pub use augmentations::{
+    IntervalMaxEnd, MaxAugmentation, MinAugmentation, SubtreeSize, SumAugmentation, Unit,
+};
 pub use augmented_rbtree::{
-    AugmentedRBTree, AugmentedRBTreeFactory, OutOfMemoryError, RBTree,
+    AugmentedRBTree, AugmentedRBTreeFactory, OutOfMemoryError, RBTree, TreeLocation,
     internal_details::AugmentedRBTreeInt,
 };
+pub use cursor::{NavCursor, NavCursorMut};
 pub use entry::{Entry, OccupiedEntry, VacantEntry};
-pub use iterators::{Iter, Keys, Range, RangeMut, ValMut, Values, ValuesMut};
+pub use iterators::{
+    Iter, IterMut, Keys, NodeGuard, Range, RangeMut, ValueGuard, Values, ValuesMut,
+};
 pub use node::Color;
-pub use policy::internal_details::TreePolicy;
-
+pub use search::{InOrderIter, InOrderPruningPolicy};
 #[cfg(feature = "serde")]
 pub use serde_impl::AugmentedRBTreeSeed;

@@ -13,10 +13,10 @@ pub(crate) mod custom_augment_a {
     use augmented_rbtree::Augment;
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
     pub(crate) struct CustomKey(pub(crate) i32);
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
     pub(crate) struct CustomValue(pub(crate) String);
 
     pub(crate) struct CustomAugment;

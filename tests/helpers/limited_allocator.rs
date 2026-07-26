@@ -1,7 +1,4 @@
-use std::cell::RefCell;
-use std::collections::LinkedList;
-use std::ptr::NonNull;
-use std::rc::Rc;
+use std::{cell::RefCell, collections::LinkedList, ptr::NonNull, rc::Rc};
 
 use augmented_rbtree::{AllocError, Allocator, Layout};
 

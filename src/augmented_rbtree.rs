@@ -1,3 +1,5 @@
+use core::{fmt::Debug, ops::Bound};
+
 use crate::{
     Augment,
     alloc_proxy::proxy::{AllocError, Allocator, Global},
@@ -6,7 +8,6 @@ use crate::{
         DefaultTraitPolicy, FullAugmentationStrategy, NullAugmentationStrategy,
     },
 };
-use core::fmt::Debug;
 
 /// An error type representing an out-of-memory condition when a tree tries to allocate a node.
 pub struct OutOfMemoryError {
@@ -40,6 +41,28 @@ impl core::fmt::Display for OutOfMemoryError {
 }
 
 impl core::error::Error for OutOfMemoryError {}
+
+/// It is used to specify the location of the node in the tree where the cursor should be initially positioned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeLocation<Q> {
+    /// Root of the tree
+    Root,
+
+    /// Position at a specific key
+    At(Q),
+
+    /// The cursor will be positioned at the leftmost (minimum) node in the tree.
+    Leftmost,
+
+    /// Rightmost (maximum) node in the tree.
+    Rightmost,
+
+    /// The cursor will be positioned at the first node whose key is greater than (or equal) to the given key depending on the bound type.
+    LowerBound(Bound<Q>),
+
+    /// The cursor will be positioned at the first node whose key is less than (or equal) to the given key depending on the bound type.
+    UpperBound(Bound<Q>),
+}
 
 /// A Red-Black Tree that supports augmentation through the `Augment` trait.
 /// This is the main type that users will interact with.
@@ -111,26 +134,27 @@ impl<G> AugmentedRBTreeFactory<G> {
 
 #[doc(hidden)]
 pub mod internal_details {
-    use crate::{
-        Entry,
-        alloc_proxy::proxy::{Allocator, Global, Layout, handle_alloc_error},
-        augmented_rbtree::OutOfMemoryError,
-        iterators::{
-            IntoIter, Iter, Keys, Range, RangeMut, Stats, Values,
-            internal_details::{IterMut, ValMutInt},
-        },
-        layout::AugmentedRBTreeLayout,
-        node::{Color, Node, internal_details::NodeRef},
-        node_allocator::NodeAllocator,
-        policy::internal_details::TreePolicy,
-    };
     use core::{
         borrow::Borrow,
         fmt::{self},
         marker::PhantomData,
         mem,
-        ops::RangeBounds,
-        ptr,
+        ops::{Bound, RangeBounds},
+    };
+
+    use crate::{
+        Entry, TreeLocation,
+        alloc_proxy::proxy::{Allocator, Global, Layout, handle_alloc_error},
+        augmented_rbtree::OutOfMemoryError,
+        cursor::{NavCursor, NavCursorMut},
+        iterators::{
+            IntoIter, Iter, IterMut, Keys, NodeGuard, Range, RangeBoundsLimits, RangeMut, Stats,
+            Values,
+        },
+        layout::AugmentedRBTreeLayout,
+        node::{Color, Node, internal_details::NodeRef},
+        node_allocator::NodeAllocator,
+        policy::internal_details::TreePolicy,
     };
 
     /// A Red-Black Tree that supports augmentation through the `Augment` trait.
@@ -140,7 +164,6 @@ pub mod internal_details {
         A: Allocator,
     {
         pub(crate) layout: AugmentedRBTreeLayout<K, V, S, A, P>,
-        pub(crate) len: usize,
     }
 
     impl<K, V, S, P> AugmentedRBTreeInt<K, V, S, Global, P>
@@ -155,9 +178,9 @@ pub mod internal_details {
                 layout: AugmentedRBTreeLayout::<K, V, S, Global, P> {
                     root: None,
                     node_allocator: NodeAllocator::new(Global),
+                    len: 0,
                     _marker: PhantomData,
                 },
-                len: 0,
             }
         }
     }
@@ -194,19 +217,12 @@ pub mod internal_details {
         where
             K: Ord,
         {
-            let result = self.layout.try_insert_node(key, value);
-            match result {
-                Ok(None) => {
-                    self.len += 1;
-                    result
-                }
-                Ok(Some(_)) | Err(_) => result,
-            }
+            self.layout.try_insert_node(key, value)
         }
 
         /// Returns the number of elements in the tree.
         pub fn len(&self) -> usize {
-            self.len
+            self.layout.len
         }
 
         /// Returns a reference to the value associated with the given key, if it exists in the tree.
@@ -363,7 +379,6 @@ pub mod internal_details {
         {
             self.layout.find_node(key).map(|node| {
                 let (_key, value) = self.layout.delete_node(node);
-                self.len -= 1;
                 value
             })
         }
@@ -386,7 +401,6 @@ pub mod internal_details {
         {
             self.layout.find_node(key).map(|node| {
                 let (k, v) = self.layout.delete_node(node);
-                self.len -= 1;
                 (k, v)
             })
         }
@@ -455,7 +469,6 @@ pub mod internal_details {
             #[allow(clippy::redundant_closure_for_method_calls)]
             let node = self.layout.root.map(|r| r.leftmost())?;
             let (k, v) = self.layout.delete_node(node);
-            self.len -= 1;
             Some((k, v))
         }
 
@@ -479,7 +492,6 @@ pub mod internal_details {
             #[allow(clippy::redundant_closure_for_method_calls)]
             let node = self.layout.root.map(|r| r.rightmost())?;
             let (k, v) = self.layout.delete_node(node);
-            self.len -= 1;
             Some((k, v))
         }
 
@@ -541,7 +553,7 @@ pub mod internal_details {
         /// assert!(!tree.is_empty());
         /// ```
         pub fn is_empty(&self) -> bool {
-            self.len == 0
+            self.layout.len == 0
         }
 
         /// Clears the tree, removing all elements.
@@ -556,10 +568,7 @@ pub mod internal_details {
         /// assert!(tree.is_empty());
         /// ```
         pub fn clear(&mut self) {
-            if let Some(root) = self.layout.root.take() {
-                unsafe { free_subtree(root, &self.layout.node_allocator.alloc) };
-            }
-            self.len = 0;
+            self.layout.clear();
         }
     }
 
@@ -593,7 +602,7 @@ pub mod internal_details {
         A: Allocator,
     {
         fn eq(&self, other: &Self) -> bool {
-            if self.len != other.len {
+            if self.len() != other.len() {
                 return false;
             }
             self.iter()
@@ -620,7 +629,6 @@ pub mod internal_details {
         pub fn new_in(alloc: A) -> Self {
             Self {
                 layout: AugmentedRBTreeLayout::new_in(alloc),
-                len: 0,
             }
         }
 
@@ -639,7 +647,7 @@ pub mod internal_details {
         /// assert_eq!(entries, vec![(&1, &"a", &()), (&2, &"b", &()), (&3, &"c", &())]);
         /// ```
         pub fn iter(&self) -> Iter<'_, K, V, S> {
-            Iter::new(self.layout.root, self.len)
+            Iter::new(self.layout.root, self.len())
         }
 
         /// Returns a mutable iterator over the entries of the tree in sorted order by key.
@@ -652,18 +660,18 @@ pub mod internal_details {
         /// tree.insert(1, 10);
         /// tree.insert(2, 20);
         ///
-        /// for (_k, mut v, _s) in tree.iter_mut() {
-        ///     *v *= 2;
+        /// for mut node_guard in tree.iter_mut() {
+        ///     *node_guard.value_mut() *= 2;
         /// }
         ///
         /// assert_eq!(tree.get(&1), Some(&20));
         /// assert_eq!(tree.get(&2), Some(&40));
         /// ```
-        pub fn iter_mut(&mut self) -> crate::iterators::internal_details::IterMut<'_, K, V, S, P>
+        pub fn iter_mut(&mut self) -> crate::iterators::IterMut<'_, K, V, S, P>
         where
             P: TreePolicy<K = K, V = V, S = S>,
         {
-            IterMut::new(self.layout.root, self.len)
+            IterMut::new(self.layout.root, self.len())
         }
 
         /// Returns an iterator over the keys of the tree in sorted order.
@@ -706,7 +714,7 @@ pub mod internal_details {
         ///
         /// # Note
         ///
-        /// Because this is an augmented tree, this iterator yields a smart guard [`ValMut`](crate::ValMut) rather than a raw reference. You must declare the loop variable as `mut`.
+        /// Because this is an augmented tree, this iterator yields a smart guard [`NodeGuard`](crate::NodeGuard) rather than a raw reference. You must declare the loop variable as `mut`.
         ///
         ///  # Examples
         ///
@@ -723,13 +731,11 @@ pub mod internal_details {
         /// assert_eq!(tree.get(&1), Some(&20));
         /// assert_eq!(tree.get(&2), Some(&40));
         /// ```
-        pub fn values_mut(
-            &mut self,
-        ) -> crate::iterators::internal_details::ValuesMutInt<'_, K, V, S, P>
+        pub fn values_mut(&mut self) -> crate::iterators::ValuesMut<'_, K, V, S, P>
         where
             P: TreePolicy<K = K, V = V, S = S>,
         {
-            crate::iterators::internal_details::ValuesMutInt::new(self.iter_mut())
+            crate::iterators::ValuesMut::new(self.layout.root, self.len())
         }
 
         /// Returns an iterator over the stats of the tree in order by key.
@@ -795,8 +801,8 @@ pub mod internal_details {
         /// let mut tree = AugmentedRBTree::<i32, i32, SubtreeSize>::new();
         /// for i in 1..=5 { tree.insert(i, i * 10); }
         ///
-        /// for (_, mut v, _) in tree.range_mut(2..=4) {
-        ///     *v += 1;
+        /// for mut node_guard in tree.range_mut(2..=4) {
+        ///     *node_guard.value_mut() += 1;
         /// }
         ///
         /// assert_eq!(tree.get(&2), Some(&21));
@@ -818,7 +824,7 @@ pub mod internal_details {
         /// # Examples
         ///
         /// ```
-        /// # use augmented_rbtree::{AugmentedRBTree, entry::Entry, augmentations::SubtreeSize};
+        /// # use augmented_rbtree::{AugmentedRBTree, Entry, augmentations::SubtreeSize};
         /// let mut tree = AugmentedRBTree::<&str, u32, SubtreeSize>::new();
         ///
         /// for word in ["hello", "world", "hello", "rust"] {
@@ -836,168 +842,51 @@ pub mod internal_details {
         {
             Entry::new(self, key)
         }
-    }
 
-    impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
-        for AugmentedRBTreeInt<K, V, S, A, P>
-    {
-        type Item = (K, V);
-        type IntoIter = IntoIter<K, V, S, A, P>;
-
-        /// Consumes the tree and returns an iterator over its entries in sorted order by key.
+        /// Resolves an abstract [`TreeLocation`] request into a physical node reference within the tree.
         ///
-        /// # Examples
+        /// This function serves as the central router for cursor initialization, mapping logical
+        /// positioning variants cleanly onto the underlying traversal and boundary methods:
         ///
-        /// ```
-        /// # use augmented_rbtree::{AugmentedRBTree, augmentations::Unit};
-        /// let mut tree = AugmentedRBTree::<i32, &str, Unit>::new();
-        /// tree.insert(2, "b");
-        /// tree.insert(1, "a");
-        /// tree.insert(3, "c");
-        ///
-        /// let entries: Vec<_> = tree.into_iter().collect();
-        /// assert_eq!(entries, vec![(1, "a"), (2, "b"), (3, "c")]);
-        /// ```
-        fn into_iter(self) -> Self::IntoIter {
-            let layout = unsafe { core::ptr::read(&raw const self.layout) };
-            let len = self.len;
-            // do not run the destructor for self, since we are taking ownership of the allocator and root
-            mem::forget(self);
-            IntoIter::new(layout, len)
-        }
-    }
+        /// | `TreeLocation` Request | Underlying Method | Target Condition |
+        /// | :--- | :--- | :--- |
+        /// | `Root` | `self.layout.root` | Returns raw root node if present |
+        /// | `At(key)` | `find_node(key)` | Find node x for which x == key |
+        /// | `LowerBound(Included(key))` | `lower_bound(key)` | Find the smallest node x for which x >= key |
+        /// | `LowerBound(Excluded(key))` | `lower_bound_excluded(key)` | Find the smallest node x for which x > key |
+        /// | `LowerBound(Unbounded)` | `leftmost()` | Find the smallest node x in the tree |
+        /// | `UpperBound(Included(key))` | `floor(key)` | Find the largest node x for which x <= key |
+        /// | `UpperBound(Excluded(key))` | `floor_excluded(key)` | Find the largest node x for which x < key |
+        /// | `UpperBound(Unbounded)` | `rightmost()` | Find the largest node x in the tree |
+        /// | `Leftmost` | `leftmost()` | Find the smallest node x in the tree |
+        /// | `Rightmost` | `rightmost()` | Find the largest node x in the tree |
+        pub(crate) fn get_tree_location<Q>(
+            &self,
+            location: TreeLocation<&Q>,
+        ) -> Option<NodeRef<K, V, S>>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord,
+        {
+            match location {
+                TreeLocation::Root => self.layout.root,
+                TreeLocation::At(key) => self.layout.find_node(key),
 
-    impl<'a, K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
-        for &'a AugmentedRBTreeInt<K, V, S, A, P>
-    where
-        P: TreePolicy<K = K, V = V, S = S>,
-    {
-        type Item = (&'a K, &'a V, &'a S);
-        type IntoIter = Iter<'a, K, V, S>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.iter()
-        }
-    }
-
-    impl<'a, K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
-        for &'a mut AugmentedRBTreeInt<K, V, S, A, P>
-    {
-        type Item = (&'a K, ValMutInt<'a, K, V, S, P>, &'a S);
-        type IntoIter = IterMut<'a, K, V, S, P>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            self.iter_mut()
-        }
-    }
-
-    impl<K, V, S, A, P> Drop for AugmentedRBTreeInt<K, V, S, A, P>
-    where
-        P: TreePolicy<K = K, V = V, S = S>,
-        A: Allocator,
-    {
-        fn drop(&mut self) {
-            if let Some(root) = self.layout.root.take() {
-                unsafe { free_subtree(root, &self.layout.node_allocator.alloc) };
+                TreeLocation::LowerBound(bound) => match bound {
+                    Bound::Included(key) => self.layout.lower_bound(key),
+                    Bound::Excluded(key) => self.layout.lower_bound_excluded(key),
+                    Bound::Unbounded => self.layout.leftmost(),
+                },
+                TreeLocation::UpperBound(bound) => match bound {
+                    Bound::Included(key) => self.layout.floor(key),
+                    Bound::Excluded(key) => self.layout.floor_excluded(key),
+                    Bound::Unbounded => self.layout.rightmost(),
+                },
+                TreeLocation::Leftmost => self.layout.leftmost(),
+                TreeLocation::Rightmost => self.layout.rightmost(),
             }
         }
-    }
 
-    impl<K, V, S, A, P> FromIterator<(K, V)> for AugmentedRBTreeInt<K, V, S, A, P>
-    where
-        K: Ord,
-        A: Allocator + Default,
-        P: TreePolicy<K = K, V = V, S = S>,
-    {
-        fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
-            let mut tree = Self::new_in(A::default());
-            for (k, v) in iter {
-                tree.insert(k, v);
-            }
-            tree
-        }
-    }
-
-    impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> Extend<(K, V)>
-        for AugmentedRBTreeInt<K, V, S, A, P>
-    where
-        K: Ord,
-    {
-        fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
-            for (k, v) in iter {
-                self.insert(k, v);
-            }
-        }
-    }
-
-    /// To avoid recursion we use the parent pointer to store the pointer to the next node in the list.
-    /// When you see the next pointer being used that is the parent pointer field.
-    /// The algorithm uses two pointers.
-    /// - `current` pointer is the node we are currently processing
-    /// - `unlinked` pointer is the node that does ot yes have a next link (see below why).
-    ///
-    ///   Algorithm processds as follows:
-    /// 1. Set the unlinked and current to the subtree root node we have to delete.
-    ///    Note that unlinked.next is None because we did not explore anything yet.
-    /// 2. If the current node has a left child and right child:
-    ///    left.next = left
-    ///    right.next = None
-    ///    unlinked.next = right
-    ///    unlinked = right
-    /// 3. If the current node has a left child and no right child:
-    ///    unlinked.next = left
-    ///    left.next = None
-    /// 4. If the current node has a right child and no left child:
-    ///    unlinked.next = right
-    ///    right.next = None
-    /// 5. tmp = current
-    ///    current = current.next
-    ///    free(tmp)
-    ///    if current is None we are done, otherwise go to step 2.
-    ///
-    /// # Safety
-    ///
-    /// This function is unsafe because it dereferences raw pointers and assumes that the provided node pointer is valid and points to a properly constructed subtree of the red-black tree. The caller must ensure that the
-    pub(crate) unsafe fn free_subtree<K, V, S, A>(node: NodeRef<K, V, S>, alloc: &A)
-    where
-        A: Allocator,
-    {
-        let mut current = Some(node.ptr);
-        let mut unlinked = node.ptr;
-
-        unsafe {
-            while let Some(current_node) = current {
-                if let Some(left) = (*current_node.as_ptr()).left {
-                    if let Some(right) = (*current_node.as_ptr()).right {
-                        (*left.as_ptr()).parent = Some(right);
-                        (*right.as_ptr()).parent = None;
-                        (*unlinked.as_ptr()).parent = Some(left);
-                        unlinked = right;
-                    } else {
-                        (*left.as_ptr()).parent = None;
-                        (*unlinked.as_ptr()).parent = Some(left);
-                        unlinked = left;
-                    }
-                } else if let Some(right) = (*current_node.as_ptr()).right {
-                    (*right.as_ptr()).parent = None;
-                    (*unlinked.as_ptr()).parent = Some(right);
-                    unlinked = right;
-                }
-                let tmp = current_node;
-                current = (*current_node.as_ptr()).parent;
-                ptr::drop_in_place(tmp.as_ptr());
-                alloc.deallocate(tmp.cast(), Layout::new::<Node<K, V, S>>());
-            }
-        }
-    }
-
-    type CloneNodeRefResult<K, V, S> = Result<Option<NodeRef<K, V, S>>, OutOfMemoryError>;
-
-    impl<K, V, S, A, P> AugmentedRBTreeInt<K, V, S, A, P>
-    where
-        P: TreePolicy<K = K, V = V, S = S>,
-        A: Allocator,
-    {
         /// Visits each node in the tree and invokes the provided callback function with the current node's key, color, and its children's keys (if they exist).
         pub fn visit_topology<F>(&self, mut visitor: F)
         where
@@ -1080,121 +969,149 @@ pub mod internal_details {
             V: Clone,
             A: Allocator + Clone,
         {
-            let clone_root = self.try_clone_node()?;
+            let clone_root = self.layout.try_clone()?;
             let node_allocator = self.layout.node_allocator.clone();
             Ok(Self {
                 layout: AugmentedRBTreeLayout {
                     root: clone_root,
                     node_allocator,
+                    len: self.len(),
                     _marker: PhantomData,
                 },
-                len: self.len,
             })
         }
 
-        fn try_clone_node(&self) -> CloneNodeRefResult<K, V, S>
+        /// Initializes an immutable navigation cursor positioned at the specified location within the tree.
+        ///
+        /// The cursor's starting node is determined dynamically based on the requested variant:
+        ///
+        /// | `TreeLocation` Request | Target Condition |
+        /// | :--- | :--- |
+        /// | `Root` | Position at the root node of the tree |
+        /// | `At(key)` | Find node x for which x == key |
+        /// | `LowerBound(Included(key))` | Find the smallest node x for which x >= key |
+        /// | `LowerBound(Excluded(key))` | Find the smallest node x for which x > key |
+        /// | `LowerBound(Unbounded)` | Find the smallest node x in the tree |
+        /// | `UpperBound(Included(key))` | Find the largest node x for which x <= key |
+        /// | `UpperBound(Excluded(key))` | Find the largest node x for which x < key |
+        /// | `UpperBound(Unbounded)` | Find the largest node x in the tree |
+        /// | `Leftmost` | Find the smallest node x in the tree |
+        /// | `Rightmost` | Find the largest node x in the tree |
+        pub fn nav_cursor<Q>(&self, location: TreeLocation<&Q>) -> NavCursor<'_, K, V, S>
         where
-            K: Clone,
-            V: Clone,
-            A: Allocator,
-            P: TreePolicy<K = K, V = V, S = S>,
+            K: Borrow<Q> + Ord,
+            Q: Ord,
         {
-            let mut current = self.layout.root;
-            let mut prev = None;
+            let node = self.get_tree_location(location);
+            NavCursor::new(node)
+        }
 
-            let mut clone_root: Option<NodeRef<K, V, S>> = None;
-            let mut current_clone: Option<NodeRef<K, V, S>> = None;
+        /// Initializes a mutable navigation cursor positioned at the specified location within the tree.
+        ///
+        /// This cursor allows safely mutating node values or removing the current node from the tree.
+        /// The initial position rules are identical to the immutable variant:
+        ///
+        /// | `TreeLocation` Request | Target Condition |
+        /// | :--- | :--- |
+        /// | `Root` | Position at the root node of the tree |
+        /// | `At(key)` | Find node x for which x == key |
+        /// | `LowerBound(Included(key))` | Find the smallest node x for which x >= key |
+        /// | `LowerBound(Excluded(key))` | Find the smallest node x for which x > key |
+        /// | `LowerBound(Unbounded)` | Find the smallest node x in the tree |
+        /// | `UpperBound(Included(key))` | Find the largest node x for which x <= key |
+        /// | `UpperBound(Excluded(key))` | Find the largest node x for which x < key |
+        /// | `UpperBound(Unbounded)` | Find the largest node x in the tree |
+        /// | `Leftmost` | Find the smallest node x in the tree |
+        /// | `Rightmost` | Find the largest node x in the tree |
+        pub fn nav_cursor_mut<Q>(
+            &mut self,
+            location: TreeLocation<&Q>,
+        ) -> NavCursorMut<'_, K, V, S, A, P>
+        where
+            K: Borrow<Q> + Ord,
+            Q: Ord,
+        {
+            let node = self.get_tree_location(location);
+            NavCursorMut::new(&mut self.layout, node)
+        }
+    }
 
-            while let Some(current_ref) = current {
-                if prev == current_ref.parent() {
-                    // comming down from parent needs to create a clone of the current node and link it to its parent clone
+    impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
+        for AugmentedRBTreeInt<K, V, S, A, P>
+    {
+        type Item = (K, V);
+        type IntoIter = IntoIter<K, V, S, A, P>;
 
-                    let key = unsafe { current_ref.key().clone() };
-                    let value = unsafe { current_ref.value().clone() };
+        /// Consumes the tree and returns an iterator over its entries in sorted order by key.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// # use augmented_rbtree::{AugmentedRBTree, augmentations::Unit};
+        /// let mut tree = AugmentedRBTree::<i32, &str, Unit>::new();
+        /// tree.insert(2, "b");
+        /// tree.insert(1, "a");
+        /// tree.insert(3, "c");
+        ///
+        /// let entries: Vec<_> = tree.into_iter().collect();
+        /// assert_eq!(entries, vec![(1, "a"), (2, "b"), (3, "c")]);
+        /// ```
+        fn into_iter(self) -> Self::IntoIter {
+            let layout = unsafe { core::ptr::read(&raw const self.layout) };
+            // do not run the destructor for self, since we are taking ownership of the allocator and root
+            mem::forget(self);
+            IntoIter::new(layout)
+        }
+    }
 
-                    let new_node = match self.layout.node_allocator.alloc_node(
-                        key.clone(),
-                        value.clone(),
-                        P::compute(&key, &value, None, None),
-                    ) {
-                        Ok(node) => node,
-                        Err(err) => {
-                            // Cleanup already allocated partial tree
-                            if let Some(root) = clone_root {
-                                unsafe {
-                                    free_subtree(root, &self.layout.node_allocator.alloc);
-                                }
-                            }
-                            // key and value are still completely valid here!
-                            return Err(err);
-                        }
-                    };
-                    new_node.set_color(current_ref.color());
+    impl<'a, K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
+        for &'a AugmentedRBTreeInt<K, V, S, A, P>
+    where
+        P: TreePolicy<K = K, V = V, S = S>,
+    {
+        type Item = (&'a K, &'a V, &'a S);
+        type IntoIter = Iter<'a, K, V, S>;
 
-                    // If the current_clone exists, we need to link the new_node to it as a child.
-                    // Otherwise, this new_node is the root of the cloned tree.
-                    if let Some(parent_clone) = current_clone {
-                        new_node.set_parent(Some(parent_clone));
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
+    }
 
-                        // check if we need to insert the new_node as a left or right child of the parent_clone
-                        let original_parent = current_ref.parent();
-                        if original_parent.and_then(NodeRef::left) == Some(current_ref) {
-                            parent_clone.set_left(Some(new_node));
-                        } else {
-                            parent_clone.set_right(Some(new_node));
-                        }
-                    } else {
-                        clone_root = Some(new_node);
-                    }
+    impl<'a, K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> IntoIterator
+        for &'a mut AugmentedRBTreeInt<K, V, S, A, P>
+    {
+        type Item = NodeGuard<'a, K, V, S, P>;
+        type IntoIter = IterMut<'a, K, V, S, P>;
 
-                    // Move our clone pointer down to this new node
-                    current_clone = Some(new_node);
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter_mut()
+        }
+    }
 
-                    let left = current_ref.left();
-                    if let Some(left_ref) = left {
-                        // navigate down to the left child
-                        prev = Some(current_ref);
-                        current = Some(left_ref);
-                    } else if let Some(right_ref) = current_ref.right() {
-                        // left child does not exist, but right child does, navigate to the right child
-                        prev = Some(current_ref);
-                        current = Some(right_ref);
-                    } else {
-                        // both children do not exist, we need to go up and repair augmentation data for the cloned node.
-                        if let Some(clone_node) = current_clone {
-                            P::augment(clone_node);
-                        }
-                        prev = Some(current_ref);
-                        current = current_ref.parent();
-                        current_clone = current_clone.and_then(NodeRef::parent);
-                    }
-                } else if prev == current_ref.left() {
-                    // comming up from left child
-                    if let Some(right_ref) = current_ref.right() {
-                        // try to visit right child
-                        prev = Some(current_ref);
-                        current = Some(right_ref);
-                    } else {
-                        // nothing to be done we need to go up and repair augmentation data for the cloned node.
-                        if let Some(clone_node) = current_clone {
-                            P::augment(clone_node);
-                        }
-                        prev = Some(current_ref);
-                        current = current_ref.parent();
-                        current_clone = current_clone.and_then(NodeRef::parent);
-                    }
-                } else if prev == current_ref.right() {
-                    // comming up from right child, we need to go up and repair augmentation data for the cloned node.
-                    if let Some(clone_node) = current_clone {
-                        P::augment(clone_node);
-                    }
-                    prev = Some(current_ref);
-                    current = current_ref.parent();
-                    current_clone = current_clone.and_then(NodeRef::parent);
-                }
+    impl<K, V, S, A, P> FromIterator<(K, V)> for AugmentedRBTreeInt<K, V, S, A, P>
+    where
+        K: Ord,
+        A: Allocator + Default,
+        P: TreePolicy<K = K, V = V, S = S>,
+    {
+        fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+            let mut tree = Self::new_in(A::default());
+            for (k, v) in iter {
+                tree.insert(k, v);
             }
+            tree
+        }
+    }
 
-            Ok(clone_root)
+    impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>> Extend<(K, V)>
+        for AugmentedRBTreeInt<K, V, S, A, P>
+    where
+        K: Ord,
+    {
+        fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
+            for (k, v) in iter {
+                self.insert(k, v);
+            }
         }
     }
 
@@ -1211,13 +1128,14 @@ pub mod internal_details {
         }
     }
 }
+
 #[cfg(test)]
 mod test {
 
-    use crate::augmentations::Unit;
     use alloc::string::String;
 
     use super::*;
+    use crate::augmentations::Unit;
     #[test]
     fn covariance() {
         fn assert_covariance<'a, 'b: 'a>(

@@ -1,8 +1,9 @@
 #![cfg(any(feature = "alloc", feature = "allocator-api", feature = "nightly"))]
 
+use std::collections::BTreeMap;
+
 use augmented_rbtree::{AugmentedRBTree, Unit};
 use proptest::prelude::*;
-use std::collections::BTreeMap;
 
 // ============================================================================
 // Augmentation: identity (no-op, for oracle comparison)

@@ -1,6 +1,6 @@
 [package]
 name = "augmented-rbtree"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Cezar Bulinaru <cbulinaru@gmail.com>"]
 edition = "2024"
 description = "An augmented red-black tree with generic, user-defined per-node statistics — enables interval trees, order-statistics trees, range-sum trees, and more."
@@ -33,11 +33,11 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 ] }
 
 [features]
-default = ["alloc"]
-debug = []
-interval-tree = ["alloc"]
 alloc = []
 allocator-api = ["dep:allocator-api2", "allocator-api2/alloc"]
+default = ["alloc"]
+experimental = ["nightly"]
+interval-tree = []
 nightly = []
 serde = ["dep:serde", "serde/derive"]
 
@@ -54,7 +54,6 @@ static_assertions = "1.1"
 proptest = "1"
 criterion = { version = "0.8", features = ["html_reports"] }
 serde_json = "1"
-env_logger = "0.11"
 graphviz-rust = "0.9.8"
 itertools = "0.15.0"
 serde = { version = "1", features = ["derive"] }

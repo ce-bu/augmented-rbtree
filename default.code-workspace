@@ -24,8 +24,11 @@
             "-W",
             "clippy::pedantic"
         ],
+        "rust-analyzer.lens.enable": true,
         "rust-analyzer.procMacro.enable": true,
-        "rust-analyzer.lens.enable": true
+        "rust-analyzer.rustfmt.extraArgs": [
+            "+nightly"
+        ]
     },
     "extensions": {
         "recommendations": [

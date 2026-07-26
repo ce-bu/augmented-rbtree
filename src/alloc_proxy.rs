@@ -2,11 +2,10 @@
 pub mod proxy {
     #[cfg(feature = "nightly")]
     #[allow(unused_imports)]
-    pub use core::alloc::{AllocError, Allocator, Layout};
-
+    pub use alloc::alloc::{Global, handle_alloc_error}; // Global lives in the alloc crate!
     #[cfg(feature = "nightly")]
     #[allow(unused_imports)]
-    pub use alloc::alloc::{Global, handle_alloc_error}; // Global lives in the alloc crate!
+    pub use core::alloc::{AllocError, Allocator, Layout};
 
     #[cfg(all(not(feature = "nightly"), feature = "allocator-api"))]
     #[allow(unused_imports)]
