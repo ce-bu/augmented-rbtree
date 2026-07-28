@@ -19,6 +19,7 @@ where
     pub(crate) root: Option<NodeRef<K, V, S>>,
     pub(crate) node_allocator: NodeAllocator<A>,
     pub(crate) len: usize,
+    pub(crate) bh: usize,
     pub(crate) _marker: PhantomData<(K, V, S, fn() -> P)>,
 }
 
@@ -54,6 +55,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             root: None,
             node_allocator: NodeAllocator::new(alloc),
             len: 0,
+            bh: 0,
             _marker: PhantomData,
         }
     }
@@ -62,6 +64,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             unsafe { free_subtree(root, &self.node_allocator.alloc) };
         }
         self.len = 0;
+        self.bh = 0;
     }
 
     pub(crate) fn try_clone(&self) -> CloneNodeRefResult<K, V, S>
@@ -181,6 +184,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
             self.len = 1;
+            self.bh = 1;
             return Ok(None);
         };
 
@@ -246,6 +250,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             new_node.set_color(Color::Black);
             self.root = Some(new_node);
             self.len = 1;
+            self.bh = 1;
             return Ok(new_node);
         };
 
@@ -409,7 +414,13 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             }
         }
 
-        self.root.expect("Root must exists").set_color(Color::Black);
+        let root_node = self.root.expect("Root must exist after insertion fixup");
+        if root_node.color() == Color::Red {
+            root_node.set_color(Color::Black);
+            // Case 1 bubbling up to the root, the black height remains unchanged.
+            // Charge the root with an extra black layer, but it is absorbed by the root itself.
+            self.bh += 1;
+        }
 
         P::augment_upstream(node);
     }
@@ -657,6 +668,10 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     /// ```
     /// * **Tree Update:** `Tree.Root` is updated directly to point to `v`.
     /// * **Child Update:** `v.Parent` is set to null/None.
+    ///
+    /// A transplannt operation only affects the parent of `u` and `v` links.
+    /// The links of `u` are not modified, and `u` is effectively removed from the tree.
+    /// It may change the root of the tree when the parent of `u` is None.
     fn transplant(&mut self, u: NodeRef<K, V, S>, v: Option<NodeRef<K, V, S>>) {
         if let Some(parent) = u.parent() {
             if Some(u) == parent.left() {
@@ -880,8 +895,8 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
 
             // Determine which side z is on relative to its parent
             let nil_side = if x.is_none() {
-                fixup_parent.map(|p| {
-                    if Some(z) == p.left() {
+                fixup_parent.map(|z_parent| {
+                    if Some(z) == z_parent.left() {
                         crate::node::NilSide::Left
                     } else {
                         crate::node::NilSide::Right
@@ -904,7 +919,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             let x = z.left();
             let fixup_parent = z.parent();
 
-            let nil_side = None;
+            let nil_side = None; // x is not None, that would have been handled in the previous case
 
             self.transplant(z, x);
 
@@ -1116,6 +1131,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     ///
     /// The `nil_side` parameter tracks which child position the nil node occupies,
     /// enabling correct sibling identification when x is None.
+    /// This is different than CLRS where a NIL sentinel is used and may have a parent pointer.
+    /// Here, we track the parent and side explicitly to avoid needing a sentinel node.
+    /// NOTE: In CLRS the NIL sentinel has its parent set during transplant.
     fn delete_fixup(
         &mut self,
         mut x: Option<NodeRef<K, V, S>>,
@@ -1170,9 +1188,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
                         w_right.set_color(Color::Black);
                     }
                     self.left_rotate(parent);
-                    x = self.root;
-                    x_parent = None;
-                    nil_side = None; // Loop will exit
+                    return;
                 }
             } else {
                 let mut w = parent
@@ -1213,15 +1229,19 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
                         w_left.set_color(Color::Black);
                     }
                     self.right_rotate(parent);
-                    x = self.root;
-                    x_parent = None;
-                    nil_side = None; // Loop will exit
+                    return;
                 }
             }
         }
 
         if let Some(x) = x {
+            if x.color() == Color::Black {
+                // we ended up with a deficit black node, so we need to decrement the black height
+                self.bh -= 1;
+            }
             x.set_color(Color::Black);
+        } else {
+            self.bh -= 1;
         }
     }
 
@@ -1314,10 +1334,13 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             if root.color() != Color::Black {
                 return false; // Root must be black
             }
-            let black_height = Self::verify_node_properties(root);
-            black_height.is_some()
+            let num_black_nodes = Self::verify_node_properties(root);
+            if num_black_nodes != Some(self.bh + 1) {
+                return false;
+            }
+            num_black_nodes.is_some()
         } else {
-            true // An empty tree is valid
+            self.bh == 0 && self.len == 0
         }
     }
 

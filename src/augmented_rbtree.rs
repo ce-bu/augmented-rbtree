@@ -179,6 +179,7 @@ pub mod internal_details {
                     root: None,
                     node_allocator: NodeAllocator::new(Global),
                     len: 0,
+                    bh: 0,
                     _marker: PhantomData,
                 },
             }
@@ -976,6 +977,7 @@ pub mod internal_details {
                     root: clone_root,
                     node_allocator,
                     len: self.len(),
+                    bh: self.black_height(),
                     _marker: PhantomData,
                 },
             })
@@ -1033,6 +1035,13 @@ pub mod internal_details {
         {
             let node = self.get_tree_location(location);
             NavCursorMut::new(&mut self.layout, node)
+        }
+
+        /// The black height of a node x is the number of black nodes on the path from x to a leaf, not counting x itself if it is black.
+        /// Leaft are considered black.
+        /// An empty tree has a black height of 0, a tree with only a black root has a black height of 1, and so on.
+        pub fn black_height(&self) -> usize {
+            self.layout.bh
         }
     }
 

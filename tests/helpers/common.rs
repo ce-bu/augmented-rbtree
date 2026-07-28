@@ -1,3 +1,4 @@
+use augmented_rbtree::Augment;
 use rand::SeedableRng;
 
 pub(crate) fn test_rng() -> rand::rngs::SmallRng {
@@ -105,5 +106,31 @@ pub(crate) mod custom_augment_a {
                 data: result.finish().to_string(),
             }
         }
+    }
+}
+
+/// Augmentation that does not store any additional data.
+#[derive(Debug)]
+pub struct UnitforTest;
+
+impl<K, V> Augment<K, V> for UnitforTest {
+    type Stats = UnitDisplay;
+
+    fn compute(
+        _key: &K,
+        _value: &V,
+        _left: Option<(&K, &V, &Self::Stats)>,
+        _right: Option<(&K, &V, &Self::Stats)>,
+    ) -> Self::Stats {
+        UnitDisplay
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct UnitDisplay;
+
+impl core::fmt::Display for UnitDisplay {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "")
     }
 }
