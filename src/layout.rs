@@ -1322,6 +1322,58 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         (key, value)
     }
 
+    fn get_right_node_with_black_height(&self, bh: usize) -> Option<NodeRef<K, V, S>> {
+        let mut current = self.root;
+        let mut current_bh = self.bh;
+
+        while bh != current_bh {
+            let right_node = current?.right()?;
+            if right_node.color() == Color::Black {
+                current_bh -= 1;
+            }
+            current = Some(right_node);
+        }
+        current
+    }
+
+    pub(crate) fn try_join(
+        mut self,
+        key: K,
+        value: V,
+        mut other: Self,
+    ) -> Result<Self, OutOfMemoryError>
+    where
+        K: Ord,
+        A: Allocator,
+        P: TreePolicy<K = K, V = V, S = S>,
+    {
+        let mut new_node = {
+            let stats = P::compute(&key, &value, None, None);
+            self.node_allocator.alloc_node(key, value, stats)?
+        };
+
+        let axis_node = self
+            .get_right_node_with_black_height(other.bh)
+            .expect("right node must exists");
+
+        self.transplant(axis_node, Some(new_node));
+
+        let other_root = other.root.take();
+        new_node.set_right(other_root);
+        if let Some(other_root) = new_node.right() {
+            other_root.set_parent(Some(new_node));
+        }
+
+        new_node.set_left(Some(axis_node));
+        axis_node.set_parent(Some(new_node));
+
+        P::augment(new_node);
+        P::augment_upstream(new_node);
+        self.insert_fixup(new_node);
+
+        Ok(self)
+    }
+
     /// Verifies the red-black tree properties and returns true if they are satisfied.
     /// This is a recursive function that checks the properties of each node in the tree.
     /// Its use is for testing and debugging purposes.

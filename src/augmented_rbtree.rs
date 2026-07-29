@@ -571,6 +571,15 @@ pub mod internal_details {
         pub fn clear(&mut self) {
             self.layout.clear();
         }
+
+        pub fn try_join(self, key: K, value: V, other: Self) -> Result<Self, OutOfMemoryError>
+        where
+            K: Ord,
+        {
+            self.layout
+                .try_join(key, value, other.layout)
+                .map(|layout| Self { layout })
+        }
     }
 
     impl<K, V, S, P> Default for AugmentedRBTreeInt<K, V, S, Global, P>
