@@ -1,4 +1,8 @@
-use core::{borrow::Borrow, cmp, marker::PhantomData};
+use core::{
+    borrow::Borrow,
+    cmp::{self, Ordering},
+    marker::PhantomData,
+};
 
 use crate::{
     alloc_proxy::proxy::{Allocator, Layout},
@@ -1336,6 +1340,42 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         current
     }
 
+    fn get_left_node_with_black_height(&self, bh: usize) -> Option<NodeRef<K, V, S>> {
+        let mut current = self.root;
+        let mut current_bh = self.bh;
+
+        while bh != current_bh {
+            let left_node = current?.left()?;
+            if left_node.color() == Color::Black {
+                current_bh -= 1;
+            }
+            current = Some(left_node);
+        }
+        current
+    }
+
+    /// Joins two Red-Black trees (`self` and `other`) together using a pivot `key` and `value`.
+    ///
+    /// # Algorithm (`Ordering::Greater`)
+    /// When `self.bh > other.bh`, `other` is spliced into the right spine of `self`:
+    ///
+    /// 1. Locate `axis_node` on `self`'s right spine matching `other.bh`.
+    /// 2. Disconnect `axis_node` and transplant `new_node` into its place.
+    /// 3. Attach `axis_node` as `new_node`'s left child and `other.root` as its right child.
+    ///
+    /// ```text
+    ///       [Before Join]                             [After Join]
+    ///
+    ///          (self)                                    (self)
+    ///          /    \                                    /    \
+    ///        ...   [axis_node] (BH==other)             ...   [new_node] (Red)
+    ///               /       \                                 /      \
+    ///             ...       ...                        [axis_node]  [other.root]
+    ///                                                    /    \        /    \
+    ///                                                  ...    ...    ...    ...
+    /// ```
+    ///
+    /// *Note: `Ordering::Less` is perfectly symmetric, splicing `self` into `other`'s left spine.*
     pub(crate) fn try_join(
         mut self,
         key: K,
@@ -1347,31 +1387,78 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         A: Allocator,
         P: TreePolicy<K = K, V = V, S = S>,
     {
-        let mut new_node = {
+        let new_node = {
             let stats = P::compute(&key, &value, None, None);
             self.node_allocator.alloc_node(key, value, stats)?
         };
 
-        let axis_node = self
-            .get_right_node_with_black_height(other.bh)
-            .expect("right node must exists");
+        let new_len = self.len + other.len + 1;
 
-        self.transplant(axis_node, Some(new_node));
+        match self.bh.cmp(&other.bh) {
+            Ordering::Equal => {
+                // Trivial case: both trees have the same black height, so we can just create a new root node and attach the two trees as its children.
+                let left_node = self.root.take();
+                let right_node = other.root.take();
+                new_node.set_left(left_node);
+                new_node.set_right(right_node);
+                new_node.set_color(Color::Black);
+                P::augment(new_node);
+                self.root = Some(new_node);
+                self.len = new_len;
+                self.bh += 1;
+                Ok(self)
+            }
 
-        let other_root = other.root.take();
-        new_node.set_right(other_root);
-        if let Some(other_root) = new_node.right() {
-            other_root.set_parent(Some(new_node));
+            Ordering::Greater => {
+                // find a node on the right spine of self with black height equal to other.bh
+                let axis_node = self
+                    .get_right_node_with_black_height(other.bh)
+                    .expect("right spine node must exists");
+
+                self.transplant(axis_node, Some(new_node));
+
+                let other_root = other.root.take();
+                new_node.set_right(other_root);
+                if let Some(other_root) = new_node.right() {
+                    other_root.set_parent(Some(new_node));
+                }
+
+                new_node.set_left(Some(axis_node));
+                axis_node.set_parent(Some(new_node));
+
+                P::augment(new_node);
+                P::augment_upstream(new_node);
+
+                self.insert_fixup(new_node);
+                self.len = new_len;
+
+                Ok(self)
+            }
+            Ordering::Less => {
+                let axis_node = other
+                    .get_left_node_with_black_height(self.bh)
+                    .expect("left spine node must exists");
+
+                other.transplant(axis_node, Some(new_node));
+
+                let self_root = self.root.take();
+                new_node.set_left(self_root);
+                if let Some(self_root) = new_node.left() {
+                    self_root.set_parent(Some(new_node));
+                }
+
+                new_node.set_right(Some(axis_node));
+                axis_node.set_parent(Some(new_node));
+
+                P::augment(new_node);
+                P::augment_upstream(new_node);
+
+                other.insert_fixup(new_node);
+
+                other.len = new_len;
+                Ok(other)
+            }
         }
-
-        new_node.set_left(Some(axis_node));
-        axis_node.set_parent(Some(new_node));
-
-        P::augment(new_node);
-        P::augment_upstream(new_node);
-        self.insert_fixup(new_node);
-
-        Ok(self)
     }
 
     /// Verifies the red-black tree properties and returns true if they are satisfied.

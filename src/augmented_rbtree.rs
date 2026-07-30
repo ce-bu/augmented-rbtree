@@ -572,6 +572,24 @@ pub mod internal_details {
             self.layout.clear();
         }
 
+        /// Joins two collections (`self` and `other`) into a single ordered tree using a pivot `key` and `value`.
+        ///
+        /// # Preconditions (Strict Key Ordering)
+        /// For the tree invariants to remain valid, all keys in `self` must be strictly smaller than the pivot `key`,
+        /// and the pivot `key` must be strictly smaller than all keys in `other`:
+        ///
+        /// ```text
+        /// Max(self.keys) < key < Min(other.keys)
+        /// ```
+        ///
+        /// # Complexity
+        /// * **Time:** `O(abs(self.black_height - other.black_height) + 1)` amortised. It scales with the height difference,
+        ///   making it significantly faster than inserting elements one by one.
+        /// * **Space:** `O(1)` auxiliary space, requiring exactly one node allocation for the pivot.
+        ///
+        /// # Errors
+        /// Returns [`OutOfMemoryError`] if the system fails to allocate memory for the new balancing pivot node.
+        /// If an error occurs, ownership of the input trees is consumed.
         pub fn try_join(self, key: K, value: V, other: Self) -> Result<Self, OutOfMemoryError>
         where
             K: Ord,
@@ -579,6 +597,52 @@ pub mod internal_details {
             self.layout
                 .try_join(key, value, other.layout)
                 .map(|layout| Self { layout })
+        }
+
+        /// Splits the tree into two separate trees based on a pivot `key`.
+        ///
+        /// Returns a tuple containing:
+        /// 1. A tree with all keys strictly less than `key` (`keys < pivot`).
+        /// 2. The value associated with the pivot `key`, if it existed in the tree.
+        /// 3. A tree with all keys strictly greater than `key` (`keys > pivot`).
+        ///
+        /// # Algorithm (Tarjan / Sleator-Tarjan Path Split)
+        /// 1. Descend the tree searching for the target `key`.
+        /// 2. As the path diverges, subtrees branching off to the left and right are collected.
+        /// 3. Upon returning or iteratively rebuilding, pieces are stitched back together using
+        ///    the `try_join` algorithm, preserving the strict Red-Black tree properties.
+        ///
+        /// ```text
+        ///          [Root]             Split at K
+        ///          /    \                ===>        (Left Tree)      (Right Tree)
+        ///       [Left]  [Right]                     All keys < K      All keys > K
+        /// ```
+        ///
+        /// # Errors
+        /// Returns [`OutOfMemoryError`] if re-joining structural fragments requires pivot
+        /// allocations that fail due to memory exhaustion.
+        pub fn try_split(mut self, key: &K) -> Result<(Self, Option<V>, Self), OutOfMemoryError>
+        where
+            K: Ord,
+        {
+            // // Base case: If the tree is empty, splitting yields two empty trees
+            // if self.root.is_none() {
+            //     return Ok((Self::new(), None, Self::new()));
+            // }
+
+            // // We delegate the destructive pointer swapping to the internal layout
+            // let (left_layout, match_val, right_layout) = self.layout.try_split_internal(key)?;
+
+            // Ok((
+            //     Self {
+            //         layout: left_layout,
+            //     },
+            //     match_val,
+            //     Self {
+            //         layout: right_layout,
+            //     },
+            // ))
+            todo!("Implement try_split for AugmentedRBTreeInt");
         }
     }
 
