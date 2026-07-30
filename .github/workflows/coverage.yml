@@ -43,6 +43,7 @@ jobs:
             --test entry_tests \
             --test interval_tree_tests \
             --test iterators_tests \
+            --test join_tests \
             --test rbtree_tests \
             --test search_tests \
             --test serde_tests \

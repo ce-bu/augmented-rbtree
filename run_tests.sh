@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "cursor_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "rbtree_tests" "search_tests" "serde_tests" "topology_tests")
+readonly core_tests=("allocator_api_tests" "allocator_tests" "augmentations_tests" "basic_tests" "cursor_tests" "drop_tests" "entry_tests" "interval_tree_tests" "iterators_tests" "join_tests" "rbtree_tests" "search_tests" "serde_tests" "topology_tests")
 readonly extra_tests=("fuzz_tests" "stress_tests" "property_tests")
 
 

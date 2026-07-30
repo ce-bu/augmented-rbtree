@@ -627,7 +627,6 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         x.set_right(Some(y));
-        y.set_parent(Some(x));
 
         P::augment(y);
         P::augment(x);
@@ -1360,8 +1359,9 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     /// When `self.bh > other.bh`, `other` is spliced into the right spine of `self`:
     ///
     /// 1. Locate `axis_node` on `self`'s right spine matching `other.bh`.
-    /// 2. Disconnect `axis_node` and transplant `new_node` into its place.
+    /// 2. Disconnect `axis_node` and transplant `new_node` (red) into its place.
     /// 3. Attach `axis_node` as `new_node`'s left child and `other.root` as its right child.
+    /// 4. Perform the insert fixup starting from `new_node` to restore Red-Black properties.
     ///
     /// ```text
     ///       [Before Join]                             [After Join]
@@ -1387,16 +1387,12 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         A: Allocator,
         P: TreePolicy<K = K, V = V, S = S>,
     {
-        let new_node = {
-            let stats = P::compute(&key, &value, None, None);
-            self.node_allocator.alloc_node(key, value, stats)?
-        };
-
         let new_len = self.len + other.len + 1;
 
         match self.bh.cmp(&other.bh) {
             Ordering::Equal => {
                 // Trivial case: both trees have the same black height, so we can just create a new root node and attach the two trees as its children.
+                let new_node = self.try_make_node(key, value)?;
                 let left_node = self.root.take();
                 let right_node = other.root.take();
                 new_node.set_left(left_node);
@@ -1410,55 +1406,69 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
             }
 
             Ordering::Greater => {
-                // find a node on the right spine of self with black height equal to other.bh
-                let axis_node = self
-                    .get_right_node_with_black_height(other.bh)
-                    .expect("right spine node must exists");
+                if other.len > 0 {
+                    let new_node = self.try_make_node(key, value)?;
+                    // find a node on the right spine of self with black height equal to other.bh
+                    let axis_node = self
+                        .get_right_node_with_black_height(other.bh)
+                        .expect("right spine node must exists");
 
-                self.transplant(axis_node, Some(new_node));
+                    self.transplant(axis_node, Some(new_node));
 
-                let other_root = other.root.take();
-                new_node.set_right(other_root);
-                if let Some(other_root) = new_node.right() {
-                    other_root.set_parent(Some(new_node));
+                    let other_root = other.root.take();
+                    new_node.set_right(other_root);
+                    if let Some(other_root) = new_node.right() {
+                        other_root.set_parent(Some(new_node));
+                    }
+
+                    new_node.set_left(Some(axis_node));
+                    axis_node.set_parent(Some(new_node));
+
+                    P::augment(new_node);
+                    P::augment_upstream(new_node);
+
+                    self.insert_fixup(new_node);
+                    self.len = new_len;
+                } else {
+                    let _ = self.try_insert_node(key, value)?;
                 }
-
-                new_node.set_left(Some(axis_node));
-                axis_node.set_parent(Some(new_node));
-
-                P::augment(new_node);
-                P::augment_upstream(new_node);
-
-                self.insert_fixup(new_node);
-                self.len = new_len;
-
                 Ok(self)
             }
             Ordering::Less => {
-                let axis_node = other
-                    .get_left_node_with_black_height(self.bh)
-                    .expect("left spine node must exists");
+                if self.len > 0 {
+                    let new_node = self.try_make_node(key, value)?;
+                    let axis_node = other
+                        .get_left_node_with_black_height(self.bh)
+                        .expect("left spine node must exists");
 
-                other.transplant(axis_node, Some(new_node));
+                    other.transplant(axis_node, Some(new_node));
 
-                let self_root = self.root.take();
-                new_node.set_left(self_root);
-                if let Some(self_root) = new_node.left() {
-                    self_root.set_parent(Some(new_node));
+                    let self_root = self.root.take();
+                    new_node.set_left(self_root);
+                    if let Some(self_root) = new_node.left() {
+                        self_root.set_parent(Some(new_node));
+                    }
+
+                    new_node.set_right(Some(axis_node));
+                    axis_node.set_parent(Some(new_node));
+
+                    P::augment(new_node);
+                    P::augment_upstream(new_node);
+
+                    other.insert_fixup(new_node);
+
+                    other.len = new_len;
+                } else {
+                    let _ = other.try_insert_node(key, value)?;
                 }
-
-                new_node.set_right(Some(axis_node));
-                axis_node.set_parent(Some(new_node));
-
-                P::augment(new_node);
-                P::augment_upstream(new_node);
-
-                other.insert_fixup(new_node);
-
-                other.len = new_len;
                 Ok(other)
             }
         }
+    }
+
+    fn try_make_node(&self, key: K, value: V) -> Result<NodeRef<K, V, S>, OutOfMemoryError> {
+        let stats = P::compute(&key, &value, None, None);
+        self.node_allocator.alloc_node(key, value, stats)
     }
 
     /// Verifies the red-black tree properties and returns true if they are satisfied.
@@ -1673,30 +1683,40 @@ where
     }
 }
 
-/// To avoid recursion we use the parent pointer to store the pointer to the next node in the list.
-/// When you see the next pointer being used that is the parent pointer field.
-/// The algorithm uses two pointers.
-/// - `current` pointer is the node we are currently processing
-/// - `unlinked` pointer is the node that does ot yes have a next link (see below why).
+/// This is a non-recursive algorithm to remove nodes.
+/// The core idea is that we are dynamically creating a linked list
+/// of notes whichh we also traverese while eating the head
 ///
-///   Algorithm processds as follows:
-/// 1. Set the unlinked and current to the subtree root node we have to delete.
+/// Algorithm uses two pointers.
+/// - `current` pointer is the node we are currently processing
+/// - `unlinked` pointer is the node that does not yet have a next link (the tail).
+/// Unlinked is just a placeholder that has an empty next pointer where we can link a child
+/// In the real implementation we use parent field for the next link
+///
+/// Algorithm:
+///
+///    Set the unlinked and current to the subtree root node we have to delete.
 ///    Note that unlinked.next is None because we did not explore anything yet.
-/// 2. If the current node has a left child and right child:
-///    left.next = left
-///    right.next = None
-///    unlinked.next = right
-///    unlinked = right
-/// 3. If the current node has a left child and no right child:
-///    unlinked.next = left
-///    left.next = None
-/// 4. If the current node has a right child and no left child:
-///    unlinked.next = right
-///    right.next = None
-/// 5. tmp = current
+///
+///    WHILE current <> NIL
+///      IF the current node has a left child and right child:
+///        left.next = right
+///        right.next = None
+///        unlinked.next = left
+///        unlinked = right
+///
+///      ELSIF the current node has a left child only
+///        unlinked.next = left
+///        left.next = None
+///
+///      ELSE the current node has a right child only
+///        unlinked.next = right
+///        right.next = None
+///    
+///    tmp = current
 ///    current = current.next
 ///    free(tmp)
-///    if current is None we are done, otherwise go to step 2.
+///    
 ///
 /// # Safety
 ///
@@ -1760,9 +1780,6 @@ where
 #[cfg(all(any(test, doctest), feature = "experimental"))]
 mod tests {
     use core::fmt::Debug;
-
-    use super::*;
-    use crate::{AugmentedRBTreeFactory, SubtreeSize};
 
     struct Inspector<T: Debug>(T);
 

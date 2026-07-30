@@ -20,6 +20,7 @@ Build interval trees, order-statistics trees, and other indexed tree structures 
 - Ordered-map API parity with `BTreeMap`, including range queries, iterators, and `Entry` mechanics.
 - Core `no_std` compatibility supporting distinct stack-only and custom allocator profiles.
 - Tree navigation cursors allows custom traversal strategies.
+- `Join` and `Split` operations for efficient tree merging and partitioning.
 - `InOrder` traversal iterator with customizable pruning and filtering of subtrees.
 - Native topology extraction utilities to generate Graphviz layout files for visual debugging.
 - Built-in, conditional compilation flags for an optimized `IntervalTree` and `serde` support.
@@ -118,21 +119,21 @@ Use strict `no_std` mode with no default features:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.2", default-features = false }
+augmented-rbtree = { version = "0.3", default-features = false }
 ```
 
 Use custom allocator support on stable:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.2", default-features = false, features = ["allocator-api"] }
+augmented-rbtree = { version = "0.3", default-features = false, features = ["allocator-api"] }
 ```
 
 Use nightly allocator API:
 
 ```toml
 [dependencies]
-augmented-rbtree = { version = "0.2", default-features = false, features = ["nightly"] }
+augmented-rbtree = { version = "0.3", default-features = false, features = ["nightly"] }
 ```
 
 ## Performance
