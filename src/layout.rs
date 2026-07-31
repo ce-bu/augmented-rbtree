@@ -627,6 +627,7 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         }
 
         x.set_right(Some(y));
+        y.set_parent(Some(x));
 
         P::augment(y);
         P::augment(x);
