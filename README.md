@@ -10,7 +10,7 @@
 
 An augmented red-black tree for Rust with generic, user-defined per-node statistics.
 
-`augmented-rbtree` automatically maintains augmentation data during inserts, deletes, and rotations.
+`augmented-rbtree` automatically maintains augmentation data during inserts, deletes, joins and split operations.
 Build interval trees, order-statistics trees, and other indexed tree structures with `O(log n)` updates and lookups.
 
 ## Highlights
@@ -27,9 +27,10 @@ Build interval trees, order-statistics trees, and other indexed tree structures 
 - Extensive test coverage verified through local integration test matrices and example recipes.
 - Validated via Miri checks and isolated fuzzing workflows to ensure strict memory safety.
 
+[Integration tests](https://github.com/ce-bu/augmented-rbtree/tree/main/tests)
+
 [Examples](https://github.com/ce-bu/augmented-rbtree/tree/main/examples)
 
-[Integration tests](https://github.com/ce-bu/augmented-rbtree/tree/main/tests)
 
 ## Installation
 

@@ -1690,6 +1690,7 @@ where
 /// Algorithm uses two pointers.
 /// - `current` pointer is the node we are currently processing
 /// - `unlinked` pointer is the node that does not yet have a next link (the tail).
+///   
 /// Unlinked is just a placeholder that has an empty next pointer where we can link a child
 /// In the real implementation we use parent field for the next link
 ///
