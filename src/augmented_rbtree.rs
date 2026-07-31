@@ -1,11 +1,12 @@
 use core::{fmt::Debug, ops::Bound};
 
 use crate::{
-    Augment,
+    Augment, AugmentedRBTreeInt,
     alloc_proxy::proxy::{AllocError, Allocator, Global},
     augmentations,
+    layout::try_join_layout,
     policy::internal_details::{
-        DefaultTraitPolicy, FullAugmentationStrategy, NullAugmentationStrategy,
+        DefaultTraitPolicy, FullAugmentationStrategy, NullAugmentationStrategy, TreePolicy,
     },
 };
 
@@ -570,33 +571,6 @@ pub mod internal_details {
         /// ```
         pub fn clear(&mut self) {
             self.layout.clear();
-        }
-
-        /// Joins two collections (`self` and `other`) into a single ordered tree using a pivot `key` and `value`.
-        ///
-        /// # Preconditions (Strict Key Ordering)
-        /// For the tree invariants to remain valid, all keys in `self` must be strictly smaller than the pivot `key`,
-        /// and the pivot `key` must be strictly smaller than all keys in `other`:
-        ///
-        /// ```text
-        /// Max(self.keys) < key < Min(other.keys)
-        /// ```
-        ///
-        /// # Complexity
-        /// * **Time:** `O(abs(self.black_height - other.black_height) + 1)` amortised. It scales with the height difference,
-        ///   making it significantly faster than inserting elements one by one.
-        /// * **Space:** `O(1)` auxiliary space, requiring exactly one node allocation for the pivot.
-        ///
-        /// # Errors
-        /// Returns [`OutOfMemoryError`] if the system fails to allocate memory for the new balancing pivot node.
-        /// If an error occurs, ownership of the input trees is consumed.
-        pub fn try_join(self, key: K, value: V, other: Self) -> Result<Self, OutOfMemoryError>
-        where
-            K: Ord,
-        {
-            self.layout
-                .try_join(key, value, other.layout)
-                .map(|layout| Self { layout })
         }
 
         /// Splits the tree into two separate trees based on a pivot `key`.
@@ -1209,6 +1183,39 @@ pub mod internal_details {
                 .expect("Failed to clone AugmentedRBTree due to memory allocation failure")
         }
     }
+}
+
+/// Joins two collections (`self` and `other`) into a single ordered tree using a pivot `key` and `value`.
+///
+/// # Preconditions (Strict Key Ordering)
+/// For the tree invariants to remain valid, all keys in `self` must be strictly smaller than the pivot `key`,
+/// and the pivot `key` must be strictly smaller than all keys in `other`:
+///
+/// ```text
+/// Max(self.keys) < key < Min(other.keys)
+/// ```
+///
+/// # Complexity
+/// * **Time:** `O(abs(self.black_height - other.black_height) + 1)` amortised. It scales with the height difference,
+///   making it significantly faster than inserting elements one by one.
+/// * **Space:** `O(1)` auxiliary space, requiring exactly one node allocation for the pivot.
+///
+/// # Errors
+/// Returns [`OutOfMemoryError`] if the system fails to allocate memory for the new balancing pivot node.
+/// If an error occurs, ownership of the input trees is consumed.
+pub fn try_join<K, V, S, A, P>(
+    left: AugmentedRBTreeInt<K, V, S, A, P>,
+    right: AugmentedRBTreeInt<K, V, S, A, P>,
+    key: K,
+    value: V,
+) -> Result<AugmentedRBTreeInt<K, V, S, A, P>, OutOfMemoryError>
+where
+    K: Ord,
+    A: Allocator,
+    P: TreePolicy<K = K, V = V, S = S>,
+{
+    try_join_layout(left.layout, right.layout, key, value)
+        .map(|layout| AugmentedRBTreeInt { layout })
 }
 
 #[cfg(test)]

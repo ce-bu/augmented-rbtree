@@ -1353,124 +1353,6 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
         current
     }
 
-    /// Joins two Red-Black trees (`self` and `other`) together using a pivot `key` and `value`.
-    ///
-    /// # Algorithm (`Ordering::Greater`)
-    /// When `self.bh > other.bh`, `other` is spliced into the right spine of `self`:
-    ///
-    /// 1. Locate `axis_node` on `self`'s right spine matching `other.bh`.
-    /// 2. Disconnect `axis_node` and transplant `new_node` (red) into its place.
-    /// 3. Attach `axis_node` as `new_node`'s left child and `other.root` as its right child.
-    /// 4. Perform the insert fixup starting from `new_node` to restore Red-Black properties.
-    ///
-    /// ```text
-    ///       [Before Join]                             [After Join]
-    ///
-    ///          (self)                                    (self)
-    ///          /    \                                    /    \
-    ///        ...   [axis_node] (BH==other)             ...   [new_node] (Red)
-    ///               /       \                                 /      \
-    ///             ...       ...                        [axis_node]  [other.root]
-    ///                                                    /    \        /    \
-    ///                                                  ...    ...    ...    ...
-    /// ```
-    ///
-    /// *Note: `Ordering::Less` is perfectly symmetric, splicing `self` into `other`'s left spine.*
-    pub(crate) fn try_join(
-        mut self,
-        key: K,
-        value: V,
-        mut other: Self,
-    ) -> Result<Self, OutOfMemoryError>
-    where
-        K: Ord,
-        A: Allocator,
-        P: TreePolicy<K = K, V = V, S = S>,
-    {
-        let new_len = self.len + other.len + 1;
-
-        match self.bh.cmp(&other.bh) {
-            Ordering::Equal => {
-                // Trivial case: both trees have the same black height, so we can just create a new root node and attach the two trees as its children.
-                let new_node = self.try_make_node(key, value)?;
-                let left_node = self.root.take();
-                let right_node = other.root.take();
-                new_node.set_left(left_node);
-                new_node.set_right(right_node);
-                new_node.set_color(Color::Black);
-                P::augment(new_node);
-                self.root = Some(new_node);
-                self.len = new_len;
-                self.bh += 1;
-                Ok(self)
-            }
-
-            Ordering::Greater => {
-                if other.len > 0 {
-                    let new_node = self.try_make_node(key, value)?;
-                    // find a node on the right spine of self with black height equal to other.bh
-                    let axis_node = self
-                        .get_right_node_with_black_height(other.bh)
-                        .expect("right spine node must exists");
-
-                    self.transplant(axis_node, Some(new_node));
-
-                    let other_root = other.root.take();
-                    new_node.set_right(other_root);
-                    if let Some(other_root) = new_node.right() {
-                        other_root.set_parent(Some(new_node));
-                    }
-
-                    new_node.set_left(Some(axis_node));
-                    axis_node.set_parent(Some(new_node));
-
-                    P::augment(new_node);
-                    P::augment_upstream(new_node);
-
-                    self.insert_fixup(new_node);
-                    self.len = new_len;
-                } else {
-                    let _ = self.try_insert_node(key, value)?;
-                }
-                Ok(self)
-            }
-            Ordering::Less => {
-                if self.len > 0 {
-                    let new_node = self.try_make_node(key, value)?;
-                    let axis_node = other
-                        .get_left_node_with_black_height(self.bh)
-                        .expect("left spine node must exists");
-
-                    other.transplant(axis_node, Some(new_node));
-
-                    let self_root = self.root.take();
-                    new_node.set_left(self_root);
-                    if let Some(self_root) = new_node.left() {
-                        self_root.set_parent(Some(new_node));
-                    }
-
-                    new_node.set_right(Some(axis_node));
-                    axis_node.set_parent(Some(new_node));
-
-                    P::augment(new_node);
-                    P::augment_upstream(new_node);
-
-                    other.insert_fixup(new_node);
-
-                    other.len = new_len;
-                } else {
-                    let _ = other.try_insert_node(key, value)?;
-                }
-                Ok(other)
-            }
-        }
-    }
-
-    fn try_make_node(&self, key: K, value: V) -> Result<NodeRef<K, V, S>, OutOfMemoryError> {
-        let stats = P::compute(&key, &value, None, None);
-        self.node_allocator.alloc_node(key, value, stats)
-    }
-
     /// Verifies the red-black tree properties and returns true if they are satisfied.
     /// This is a recursive function that checks the properties of each node in the tree.
     /// Its use is for testing and debugging purposes.
@@ -1588,6 +1470,124 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
 
         Self::verify_node_augmentation(current_node.left())
             && Self::verify_node_augmentation(current_node.right())
+    }
+
+    fn try_make_node(&self, key: K, value: V) -> Result<NodeRef<K, V, S>, OutOfMemoryError> {
+        let stats = P::compute(&key, &value, None, None);
+        self.node_allocator.alloc_node(key, value, stats)
+    }
+}
+
+/// Joins two Red-Black trees (`self` and `other`) together using a pivot `key` and `value`.
+///
+/// # Algorithm (`Ordering::Greater`)
+/// When `self.bh > other.bh`, `other` is spliced into the right spine of `self`:
+///
+/// 1. Locate `axis_node` on `self`'s right spine matching `other.bh`.
+/// 2. Disconnect `axis_node` and transplant `new_node` (red) into its place.
+/// 3. Attach `axis_node` as `new_node`'s left child and `other.root` as its right child.
+/// 4. Perform the insert fixup starting from `new_node` to restore Red-Black properties.
+///
+/// ```text
+///       [Before Join]                             [After Join]
+///
+///          (self)                                    (self)
+///          /    \                                    /    \
+///        ...   [axis_node] (BH==other)             ...   [new_node] (Red)
+///               /       \                                 /      \
+///             ...       ...                        [axis_node]  [other.root]
+///                                                    /    \        /    \
+///                                                  ...    ...    ...    ...
+/// ```
+///
+/// *Note: `Ordering::Less` is perfectly symmetric, splicing `self` into `other`'s left spine.*
+pub(crate) fn try_join_layout<K, V, S, A, P>(
+    mut left_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    mut right_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    key: K,
+    value: V,
+) -> Result<AugmentedRBTreeLayout<K, V, S, A, P>, OutOfMemoryError>
+where
+    K: Ord,
+    A: Allocator,
+    P: TreePolicy<K = K, V = V, S = S>,
+{
+    let new_len = left_tree.len + right_tree.len + 1;
+
+    match left_tree.bh.cmp(&right_tree.bh) {
+        Ordering::Equal => {
+            // Trivial case: both trees have the same black height, so we can just create a new root node and attach the two trees as its children.
+            let new_node = left_tree.try_make_node(key, value)?;
+            let left_node = left_tree.root.take();
+            let right_node = right_tree.root.take();
+            new_node.set_left(left_node);
+            new_node.set_right(right_node);
+            new_node.set_color(Color::Black);
+            P::augment(new_node);
+            left_tree.root = Some(new_node);
+            left_tree.len = new_len;
+            left_tree.bh += 1;
+            Ok(left_tree)
+        }
+
+        Ordering::Greater => {
+            if right_tree.len > 0 {
+                let new_node = left_tree.try_make_node(key, value)?;
+                // find a node on the right spine of self with black height equal to other.bh
+                let axis_node = left_tree
+                    .get_right_node_with_black_height(right_tree.bh)
+                    .expect("right spine node must exists");
+
+                left_tree.transplant(axis_node, Some(new_node));
+
+                let other_root = right_tree.root.take();
+                new_node.set_right(other_root);
+                if let Some(other_root) = new_node.right() {
+                    other_root.set_parent(Some(new_node));
+                }
+
+                new_node.set_left(Some(axis_node));
+                axis_node.set_parent(Some(new_node));
+
+                P::augment(new_node);
+                P::augment_upstream(new_node);
+
+                left_tree.insert_fixup(new_node);
+                left_tree.len = new_len;
+            } else {
+                let _ = left_tree.try_insert_node(key, value)?;
+            }
+            Ok(left_tree)
+        }
+        Ordering::Less => {
+            if left_tree.len > 0 {
+                let new_node = right_tree.try_make_node(key, value)?;
+                let axis_node = right_tree
+                    .get_left_node_with_black_height(left_tree.bh)
+                    .expect("left spine node must exists");
+
+                right_tree.transplant(axis_node, Some(new_node));
+
+                let left_root = left_tree.root.take();
+                new_node.set_left(left_root);
+                if let Some(left_root) = new_node.left() {
+                    left_root.set_parent(Some(new_node));
+                }
+
+                new_node.set_right(Some(axis_node));
+                axis_node.set_parent(Some(new_node));
+
+                P::augment(new_node);
+                P::augment_upstream(new_node);
+
+                right_tree.insert_fixup(new_node);
+
+                right_tree.len = new_len;
+            } else {
+                let _ = right_tree.try_insert_node(key, value)?;
+            }
+            Ok(right_tree)
+        }
     }
 }
 

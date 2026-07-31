@@ -145,7 +145,7 @@ pub use augmentations::{
 };
 pub use augmented_rbtree::{
     AugmentedRBTree, AugmentedRBTreeFactory, OutOfMemoryError, RBTree, TreeLocation,
-    internal_details::AugmentedRBTreeInt,
+    internal_details::AugmentedRBTreeInt, try_join,
 };
 pub use cursor::{NavCursor, NavCursorMut};
 pub use entry::{Entry, OccupiedEntry, VacantEntry};

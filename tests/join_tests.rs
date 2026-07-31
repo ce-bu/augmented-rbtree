@@ -3,7 +3,7 @@
 
 use std::iter::repeat_with;
 
-use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, SubtreeSize};
+use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, SubtreeSize, try_join};
 use itertools::Itertools;
 use rand::{RngExt, rngs::SmallRng};
 
@@ -33,7 +33,7 @@ fn test_join_two_empty_trees() {
     let left_tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
     let right_tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
 
-    let tree = left_tree.try_join(0, 0, right_tree).expect("Join failed");
+    let tree = try_join(left_tree, right_tree, 0, 0).expect("Join failed");
 
     assert_eq!(tree.len(), 1);
     assert!(tree.verify_properties());
@@ -49,7 +49,7 @@ fn test_join_big_small() {
 
     let len_left = left_tree.len();
     let len_right = right_tree.len();
-    let tree = left_tree.try_join(55, 55, right_tree).expect("Join failed");
+    let tree = try_join(left_tree, right_tree, 55, 55).expect("Join failed");
 
     assert_eq!(tree.len(), len_left + len_right + 1);
 
@@ -64,7 +64,7 @@ fn test_join_small_big() {
     let right_tree = create_test_tree(20, 60..100, &mut rng);
     let len_left = left_tree.len();
     let len_right = right_tree.len();
-    let tree = left_tree.try_join(55, 55, right_tree).expect("Join failed");
+    let tree = try_join(left_tree, right_tree, 55, 55).expect("Join failed");
 
     assert_eq!(tree.len(), len_left + len_right + 1);
     assert!(tree.verify_properties());
@@ -77,7 +77,7 @@ fn test_join_with_empty_left() {
     let left_tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
     let right_tree = create_test_tree(20, 60..100, &mut rng);
     let len_right = right_tree.len();
-    let tree = left_tree.try_join(55, 55, right_tree).expect("Join failed");
+    let tree = try_join(left_tree, right_tree, 55, 55).expect("Join failed");
 
     assert_eq!(tree.len(), len_right + 1);
     assert!(tree.verify_properties());
@@ -90,7 +90,7 @@ fn test_join_with_empty_right() {
     let left_tree = create_test_tree(20, 0..50, &mut rng);
     let right_tree = AugmentedRBTreeFactory::<SubtreeSize>::new_tree();
     let len_left = left_tree.len();
-    let tree = left_tree.try_join(55, 55, right_tree).expect("Join failed");
+    let tree = try_join(left_tree, right_tree, 55, 55).expect("Join failed");
 
     assert_eq!(tree.len(), len_left + 1);
     assert!(tree.verify_properties());
