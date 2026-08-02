@@ -1581,11 +1581,25 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
 ///
 /// *Note: `Ordering::Less` is perfectly symmetric, splicing `self` into `other`'s left spine.*
 pub(crate) fn try_join_layout<K, V, S, A, P>(
-    mut left_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
-    mut right_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    left_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    right_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
     key: K,
     value: V,
 ) -> Result<AugmentedRBTreeLayout<K, V, S, A, P>, OutOfMemoryError>
+where
+    K: Ord,
+    A: Allocator,
+    P: TreePolicy<K = K, V = V, S = S>,
+{
+    let new_node = left_tree.try_make_node(key, value)?;
+    Ok(join_layout_with_node(left_tree, right_tree, new_node))
+}
+
+pub(crate) fn join_layout_with_node<K, V, S, A, P>(
+    mut left_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    mut right_tree: AugmentedRBTreeLayout<K, V, S, A, P>,
+    new_node: NodeRef<K, V, S>,
+) -> AugmentedRBTreeLayout<K, V, S, A, P>
 where
     K: Ord,
     A: Allocator,
@@ -1596,7 +1610,6 @@ where
     match left_tree.bh.cmp(&right_tree.bh) {
         Ordering::Equal => {
             // Trivial case: both trees have the same black height, so we can just create a new root node and attach the two trees as its children.
-            let new_node = left_tree.try_make_node(key, value)?;
             let left_node = left_tree.root.take();
             let right_node = right_tree.root.take();
             new_node.set_left(left_node);
@@ -1606,12 +1619,11 @@ where
             left_tree.root = Some(new_node);
             left_tree.len = new_len;
             left_tree.bh += 1;
-            Ok(left_tree)
+            left_tree
         }
 
         Ordering::Greater => {
             if right_tree.len > 0 {
-                let new_node = left_tree.try_make_node(key, value)?;
                 // find a node on the right spine of self with black height equal to other.bh
                 let axis_node = left_tree
                     .get_right_node_with_black_height(right_tree.bh)
@@ -1634,13 +1646,20 @@ where
                 left_tree.insert_fixup(new_node);
                 left_tree.len = new_len;
             } else {
-                let _ = left_tree.try_insert_node(key, value)?;
+                let leftmost_node = left_tree.root.expect("root exists").leftmost();
+                leftmost_node.set_right(Some(new_node));
+                new_node.set_parent(Some(leftmost_node));
+
+                P::augment(leftmost_node);
+                P::augment_upstream(leftmost_node);
+
+                left_tree.insert_fixup(new_node);
+                left_tree.len = new_len;
             }
-            Ok(left_tree)
+            left_tree
         }
         Ordering::Less => {
             if left_tree.len > 0 {
-                let new_node = right_tree.try_make_node(key, value)?;
                 let axis_node = right_tree
                     .get_left_node_with_black_height(left_tree.bh)
                     .expect("left spine node must exists");
@@ -1663,9 +1682,17 @@ where
 
                 right_tree.len = new_len;
             } else {
-                let _ = right_tree.try_insert_node(key, value)?;
+                let leftmost_node = right_tree.root.expect("root exists").leftmost();
+                leftmost_node.set_right(Some(new_node));
+                new_node.set_parent(Some(leftmost_node));
+
+                P::augment(leftmost_node);
+                P::augment_upstream(leftmost_node);
+
+                right_tree.insert_fixup(new_node);
+                right_tree.len = new_len;
             }
-            Ok(right_tree)
+            right_tree
         }
     }
 }
