@@ -1297,8 +1297,12 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     ///       [y]                     ...                     [x]
     ///      /   \                                           /   \
     ///    NIL   [x]                                       (a)   (b)
-    /// ```
+    ///     ```
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub(crate) fn delete_node_no_fixup(&mut self, z: NodeRef<K, V, S>) -> (K, V) {
+        // the reason coverage is missing is we use this to consume
+        // the tree in into_iter where we really do not care about
+        // maintaining tree structure
         if z.left().is_none() {
             self.transplant(z, z.right());
         } else if z.right().is_none() {
@@ -1476,6 +1480,80 @@ impl<K, V, S, A: Allocator, P: TreePolicy<K = K, V = V, S = S>>
     fn try_make_node(&self, key: K, value: V) -> Result<NodeRef<K, V, S>, OutOfMemoryError> {
         let stats = P::compute(&key, &value, None, None);
         self.node_allocator.alloc_node(key, value, stats)
+    }
+
+    pub(crate) fn split_at_node(
+        mut self,
+        key: &K,
+    ) -> (
+        AugmentedRBTreeLayout<K, V, S, A, P>,
+        AugmentedRBTreeLayout<K, V, S, A, P>,
+    )
+    where
+        K: Ord,
+        A: Allocator + Clone,
+    {
+        let Some(mut current) = self.root else {
+            let empty_left = AugmentedRBTreeLayout {
+                root: None,
+                len: 0,
+                bh: 0,
+                node_allocator: self.node_allocator.clone(),
+                _marker: PhantomData,
+            };
+            let empty_right = AugmentedRBTreeLayout {
+                root: None,
+                len: 0,
+                bh: 0,
+                node_allocator: self.node_allocator.clone(),
+                _marker: PhantomData,
+            };
+            return (empty_left, empty_right);
+        };
+
+        /*
+            let (parent, split_node, is_left) = loop {
+                let current_key = unsafe { current.key() };
+
+                match key.cmp(current_key) {
+                    cmp::Ordering::Less => {
+                        if let Some(left) = current.left() {
+                            current = left;
+                        } else {
+                            break (current, None, true);
+                        }
+                    }
+                    cmp::Ordering::Equal => {
+                        break (curr, Some(current), false);
+                    }
+                    cmp::Ordering::Greater => {
+                        if let Some(right) = current.right() {
+                            current = right;
+                        } else {
+                            break (current, None, false);
+                        }
+                    }
+                }
+            };
+        */
+        // let stats = P::compute(&key, &value, None, None);
+        // let new_node = self.node_allocator.alloc_node(key, value, stats)?;
+        // new_node.set_parent(Some(parent));
+
+        // if insert_left {
+        //     parent.set_left(Some(new_node));
+        // } else {
+        //     parent.set_right(Some(new_node));
+        // }
+
+        // P::augment(parent);
+        // P::augment_upstream(parent);
+        // self.insert_fixup(new_node);
+
+        // self.len += 1;
+
+        // find the node t split
+        todo!("Implement split_at_node for AugmentedRBTreeLayout");
     }
 }
 

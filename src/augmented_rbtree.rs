@@ -595,7 +595,7 @@ pub mod internal_details {
         /// # Errors
         /// Returns [`OutOfMemoryError`] if re-joining structural fragments requires pivot
         /// allocations that fail due to memory exhaustion.
-        pub fn try_split(self, _key: &K) -> Result<(Self, Option<V>, Self), OutOfMemoryError>
+        pub fn try_split(self, _key: &K) -> Result<(Self, Option<(K, V)>, Self), OutOfMemoryError>
         where
             K: Ord,
         {

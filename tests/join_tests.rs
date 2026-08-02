@@ -7,7 +7,7 @@ use augmented_rbtree::{AugmentedRBTree, AugmentedRBTreeFactory, SubtreeSize, try
 use itertools::Itertools;
 use rand::{RngExt, rngs::SmallRng};
 
-use crate::helpers::common::test_rng;
+use crate::helpers::{common::test_rng, dumper::dump_tree};
 
 mod helpers;
 
@@ -95,4 +95,11 @@ fn test_join_with_empty_right() {
     assert_eq!(tree.len(), len_left + 1);
     assert!(tree.verify_properties());
     assert!(tree.verify_augmentation());
+}
+
+#[test]
+fn test_split_key_exists() {
+    let mut rng = test_rng();
+    let main_tree = create_test_tree(50, 0..100, &mut rng);
+    dump_tree(&main_tree, None, true);
 }
